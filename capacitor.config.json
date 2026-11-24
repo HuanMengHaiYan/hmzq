@@ -1,0 +1,13 @@
+{
+  "appId": "com.hmzq.pool",
+  "appName": "幻梦-星光桌球",
+  "webDir": "dist",
+  "loggingEnabled": false,
+  "android": {
+    "webContentsDebuggingEnabled": true,
+    "allowMixedContent": false
+  },
+  "server": {
+    "cleartext": false
+  }
+}

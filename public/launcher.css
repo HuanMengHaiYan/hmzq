@@ -1,0 +1,794 @@
+/* ==========================================================================
+   幻梦桌球 · 启动器样式
+   --------------------------------------------------------------------------
+   视觉：游戏实机截图做背景 → 恒定模糊（毛玻璃）→ 暗色渐晕压住对比度 →
+         左侧菜单栏与右侧内容区都是半透明玻璃卡片（backdrop-filter 再糊一层）。
+   动势：背景图左右缓慢循环平移（.bg-img 的 bgPan 动画），无限来回。
+   ========================================================================== */
+
+:root {
+  --glass: rgba(11, 16, 24, 0.44);       /* 面板：别太黑，台面要能透上来 */
+  --glass-2: rgba(18, 25, 35, 0.5);      /* 卡片：叠在面板之上，透明度更低一点 */
+  --line: rgba(255, 255, 255, 0.12);
+  --line-2: rgba(255, 255, 255, 0.22);
+  --txt: #eef2f7;
+  --sub: #9aa7b8;
+  --accent: #6fd3ff;
+  --green: #7ee787;
+  --warm: #ffd27e;
+  --danger: #ff8a8a;
+  --radius: 18px;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: #05070b;
+  color: var(--txt);
+  font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ---------------- 背景：模糊 + 缓慢左右晃动 ---------------- */
+.bg { position: fixed; inset: 0; overflow: hidden; z-index: 0; background: #05070b; }
+
+.bg-img {
+  position: absolute;
+  top: 0;
+  left: -18%;            /* 元素比视口宽 36%：左右各留 18% 余量，平移时不会露边 */
+  width: 136%;
+  height: 100%;
+  object-fit: cover;
+  filter: blur(10px) saturate(1.1) brightness(0.98);   /* 毛玻璃的关键：恒定模糊 */
+  transform: translate3d(-6%, 0, 0);
+  animation: bgPan 40s ease-in-out infinite alternate;  /* 40s 一个来回，慢慢晃 */
+  will-change: transform;
+  user-select: none;
+  -webkit-user-drag: none;
+  pointer-events: none;
+}
+
+/* ±6% × 136% ≈ 视口宽度的 ±8%，仍在 18% 余量内 → 永远不会看到图片边缘 */
+@keyframes bgPan {
+  from { transform: translate3d(-6%, 0, 0); }
+  to   { transform: translate3d(6%, 0, 0); }
+}
+
+/* 暗色渐晕：压住整体亮度保证文字可读，但别压死 —— 台面轮廓要能透出来。
+   （左中右三段浓度都故意留低，真正提供对比度的是上面两层玻璃卡片。） */
+.bg-veil {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(125% 95% at 6% 10%, rgba(4, 8, 14, 0.40), rgba(4, 8, 14, 0.08) 55%, rgba(4, 8, 14, 0.30) 100%),
+    linear-gradient(105deg, rgba(3, 6, 11, 0.50) 0%, rgba(5, 10, 17, 0.10) 46%, rgba(3, 6, 11, 0.38) 100%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bg-img { animation: none; }
+}
+
+/* ---------------- 总框架 ---------------- */
+.shell {
+  position: relative;
+  z-index: 2;
+  height: 100%;
+  max-width: 1320px;
+  margin: 0 auto;
+  padding: 22px;
+  display: grid;
+  grid-template-columns: 296px minmax(0, 1fr);
+  gap: 16px;
+  transition: opacity 0.26s ease, transform 0.26s ease;
+}
+body.leaving .shell { opacity: 0; transform: scale(0.985); }
+
+.side, .stage {
+  background: var(--glass);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  backdrop-filter: blur(26px) saturate(1.14);
+  -webkit-backdrop-filter: blur(26px) saturate(1.14);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.45);
+}
+
+/* ---------------- 左侧菜单栏 ---------------- */
+.side { display: flex; flex-direction: column; padding: 22px 16px 14px; }
+
+.brand { padding: 2px 8px 20px; }
+.brand h1 {
+  margin: 0;
+  font-size: 27px;
+  font-weight: 800;
+  letter-spacing: 5px;
+  background: linear-gradient(100deg, #ffffff 10%, var(--accent) 90%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.brand .sub {
+  margin: 6px 0 0;
+  font-size: 10px;
+  letter-spacing: 3.4px;
+  color: rgba(255, 255, 255, 0.34);
+}
+.brand .ver { margin: 10px 0 0; font-size: 12px; color: var(--sub); }
+
+.menu { display: flex; flex-direction: column; gap: 6px; flex: 1; }
+
+.mi {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 13px 14px;
+  font: inherit;
+  font-size: 14.5px;
+  font-weight: 600;
+  color: #d7dee9;
+  text-align: left;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid transparent;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: background 0.18s, border-color 0.18s, transform 0.18s, color 0.18s;
+}
+.mi svg {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.85;
+}
+.mi .arrow { margin-left: auto; font-style: normal; opacity: 0; transition: opacity 0.18s, transform 0.18s; }
+.mi:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.07);
+  border-color: var(--line);
+  transform: translateX(3px);
+}
+.mi:hover .arrow { opacity: 0.55; }
+.mi.on {
+  color: #fff;
+  background: linear-gradient(100deg, rgba(111, 211, 255, 0.2), rgba(111, 211, 255, 0.05));
+  border-color: rgba(111, 211, 255, 0.42);
+  box-shadow: inset 0 0 0 1px rgba(111, 211, 255, 0.08), 0 6px 20px rgba(59, 154, 214, 0.16);
+}
+.mi.on svg { color: var(--accent); opacity: 1; }
+.mi.on .arrow { opacity: 0.8; transform: translateX(2px); }
+.mi.danger:hover { color: var(--danger); border-color: rgba(255, 138, 138, 0.36); }
+.mi.danger.on {
+  color: var(--danger);
+  background: rgba(255, 138, 138, 0.12);
+  border-color: rgba(255, 138, 138, 0.4);
+  box-shadow: none;
+}
+.mi.danger.on svg { color: var(--danger); }
+
+.foot {
+  padding: 12px 8px 2px;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.36);
+  line-height: 2;
+}
+
+kbd {
+  display: inline-block;
+  padding: 1px 6px;
+  font-family: inherit;
+  font-size: 11px;
+  color: #dfe6ef;
+  background: rgba(255, 255, 255, 0.09);
+  border: 1px solid var(--line);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+}
+
+/* ---------------- 右侧内容区 ---------------- */
+.stage { padding: 26px 28px; overflow-y: auto; scrollbar-width: thin; }
+.stage::-webkit-scrollbar { width: 8px; }
+.stage::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.14); border-radius: 4px; }
+
+.page { display: none; }
+.page.on { display: block; animation: pageIn 0.26s ease both; }
+@keyframes pageIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: none; }
+}
+
+.ph { margin-bottom: 20px; }
+.ph h2 { margin: 0; font-size: 21px; letter-spacing: 1.5px; }
+.ph p { margin: 7px 0 0; font-size: 12.5px; color: var(--sub); }
+/* 页内小节（规则设置页里"球体设置"与"本地双人规则"的分隔） */
+.ph.sub { margin: 0 0 16px; }
+.ph.sub h3 { margin: 0; font-size: 15px; letter-spacing: 1px; }
+.ph.sub p { margin: 5px 0 0; font-size: 12px; }
+hr.sep { border: none; border-top: 1px solid var(--line); margin: 26px 0 22px; }
+
+/* 模式卡片 */
+.cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+
+.card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 15px 18px 17px;
+  font: inherit;
+  color: var(--txt);
+  text-align: left;
+  background: var(--glass-2);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  cursor: pointer;
+  overflow: hidden;
+  transition: transform 0.18s, border-color 0.18s, background 0.18s;
+}
+.card:hover { border-color: var(--line-2); transform: translateY(-2px); }
+.card[data-soon] { cursor: not-allowed; opacity: 0.52; }
+.card[data-soon]:hover { transform: none; border-color: var(--line); }
+.card h3 { margin: 0; font-size: 15.5px; letter-spacing: 0.5px; }
+.card p { margin: 0; font-size: 12.5px; line-height: 1.65; color: var(--sub); }
+
+.card .idx {
+  position: absolute;
+  right: 12px;
+  bottom: 2px;
+  font-size: 42px;
+  font-weight: 800;
+  line-height: 1;
+  color: rgba(255, 255, 255, 0.055);
+  pointer-events: none;
+}
+.tag {
+  align-self: flex-start;
+  padding: 2px 9px;
+  font-size: 10.5px;
+  letter-spacing: 0.5px;
+  color: var(--sub);
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+}
+.tag.live { color: #04121f; background: linear-gradient(135deg, var(--green), #4ad6a0); font-weight: 700; }
+.card.live {
+  background: linear-gradient(150deg, rgba(111, 211, 255, 0.16), rgba(20, 27, 38, 0.66) 62%);
+  border-color: rgba(111, 211, 255, 0.5);
+  box-shadow: 0 10px 32px rgba(59, 154, 214, 0.22);
+}
+.card.live:hover { border-color: var(--accent); }
+.card .go { margin-top: 4px; font-size: 13px; font-weight: 700; color: var(--accent); }
+
+/* 「后续开发」但可点击展开的卡片（如人机对战 → 选难度） */
+.card.soon { opacity: 0.74; }
+.card.soon:hover { opacity: 0.92; }
+
+/* 折叠展开的备选按钮（人机对战难度 / 娱乐模式占位） */
+.sub-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(158px, 1fr));
+  gap: 10px;
+  margin: 12px 0 4px;
+  animation: pageIn 0.22s ease both;
+}
+.sub-grid[hidden] { display: none; }
+
+.chip-btn {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 14px;
+  font: inherit;
+  color: var(--txt);
+  text-align: left;
+  background: rgba(255, 255, 255, 0.045);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: background 0.16s, border-color 0.16s, transform 0.16s;
+}
+.chip-btn:hover { background: rgba(255, 255, 255, 0.1); border-color: var(--line-2); transform: translateY(-1px); }
+.chip-btn b { font-size: 13.5px; letter-spacing: 0.5px; }
+.chip-btn i { font-style: normal; font-size: 11.5px; color: var(--sub); }
+
+/* 设置项 */
+.field { margin-bottom: 22px; }
+.fl { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 9px; }
+.fl label { font-size: 13.5px; color: #e6ecf4; }
+.fl b { font-size: 14px; color: var(--accent); font-variant-numeric: tabular-nums; }
+.fl .lock { font-size: 11px; color: var(--warm); }
+
+input[type=range] { width: 100%; accent-color: var(--accent); cursor: pointer; }
+
+/* 文本输入（玩家名称） */
+.text-in {
+  width: 100%;
+  padding: 11px 13px;
+  font: inherit;
+  font-size: 13.5px;
+  color: var(--txt);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  outline: none;
+  transition: border-color 0.16s, background 0.16s;
+}
+.text-in:focus { border-color: var(--accent); background: rgba(255, 255, 255, 0.08); }
+
+/* ---------------- 挑战历史 ----------------
+   一行 = 玩家 / 模式(难度) / 次数槽 / 结果 / 用时 / 日期
+   窄屏放不下六列时自动折成两行（见下面的媒体查询）。
+*/
+.hist-tabs { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+.hist-tabs button {
+  padding: 9px 16px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--sub);
+  background: rgba(255, 255, 255, 0.045);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  cursor: pointer;
+  transition: color 0.16s, background 0.16s, border-color 0.16s;
+}
+.hist-tabs button:hover { color: var(--txt); background: rgba(255, 255, 255, 0.1); }
+.hist-tabs button.on {
+  color: #04121f;
+  font-weight: 700;
+  background: linear-gradient(135deg, var(--accent), #4ab8e0);
+  border-color: transparent;
+}
+
+.hist-list { display: flex; flex-direction: column; gap: 6px; }
+.hist-empty {
+  padding: 28px 16px;
+  font-size: 13px;
+  color: var(--sub);
+  text-align: center;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px dashed var(--line);
+  border-radius: 12px;
+}
+.hist-row {
+  display: grid;
+  grid-template-columns: minmax(64px, 0.9fr) minmax(96px, 1.4fr) 58px 64px 54px minmax(72px, auto);
+  align-items: center;
+  gap: 10px;
+  padding: 11px 14px;
+  font-size: 13px;
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 11px;
+}
+.hist-row .h-name { color: var(--txt); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hist-row .h-mode { color: var(--sub); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hist-row .h-slot { color: var(--warm); font-size: 12px; text-align: center; }
+.hist-row .h-slot.muted { color: var(--sub); opacity: 0.45; }   /* 计分 / 自由模式的空槽位 */
+.hist-row .h-res { font-weight: 700; color: var(--green); text-align: right; }
+.hist-row .h-time { color: var(--txt); font-variant-numeric: tabular-nums; text-align: right; }
+.hist-row .h-date { color: var(--sub); font-size: 11.5px; font-variant-numeric: tabular-nums; text-align: right; }
+.hist-row.fail .h-res { color: var(--danger); }
+/* 整行可点开详情：给一点"这是可以点的"反馈 */
+.hist-row.clickable { cursor: pointer; transition: background 0.15s, border-color 0.15s; }
+.hist-row.clickable:hover { background: rgba(255, 255, 255, 0.075); border-color: var(--line-2); }
+.hist-row.clickable:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* 「初始化」的确认态：红了才表示再点一次就真删 */
+#hist-clear.armed { color: var(--danger); border-color: rgba(255, 138, 138, 0.5); }
+
+/* ---------- 单局详情弹窗（点挑战历史里的某一条） ---------- */
+#hist-detail {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(6, 9, 14, 0.68);
+  backdrop-filter: blur(6px);
+}
+#hist-detail.on { display: flex; }
+.hd-card {
+  width: min(420px, 100%);
+  max-height: min(640px, calc(100vh - 24px));
+  display: flex;
+  flex-direction: column;
+  padding: 20px 22px;
+  background: rgba(24, 29, 39, 0.98);
+  border: 1px solid var(--line-2);
+  border-radius: 16px;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.6);
+}
+.hd-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.hd-head h3 { margin: 0; font-size: 15px; color: var(--txt); }
+.hd-head button {
+  width: 30px; height: 30px;
+  font: inherit; font-size: 15px;
+  color: var(--sub);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  cursor: pointer;
+}
+.hd-head button:hover { color: var(--txt); background: rgba(255, 255, 255, 0.1); }
+/* 行多一些（计时模式 12 行）时会超出一屏，得能滚 —— 但默认的浅色滚动条在深色卡片上
+   是一条刺眼白条，必须自己上色；Firefox 走 scrollbar-*，Chrome / Safari 走 ::-webkit-*。
+   padding-right 是给"覆盖式滚动条"（安卓 WebView / 移动端 Chrome）留的余量：
+   那种滚动条不占布局宽度，不留余量的话右对齐的数字会正好压在滚动条下面。 */
+.hd-rows {
+  margin: 10px 0 12px;
+  padding-right: 8px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+  overscroll-behavior: contain;
+}
+.hd-rows::-webkit-scrollbar { width: 8px; }
+.hd-rows::-webkit-scrollbar-track { background: transparent; }
+.hd-rows::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.18);
+  border-radius: 4px;
+}
+.hd-rows::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.3); }
+.hd-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 8px 0;
+  font-size: 13px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.055);
+}
+.hd-row:last-child { border-bottom: none; }
+.hd-row .k { color: var(--sub); flex: none; }
+/* min-width:0 + anywhere：玩家名可能很长，宁可换行也别把行撑出去（撑出去会多出横向滚动条） */
+.hd-row .v {
+  color: var(--txt);
+  text-align: right;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
+}
+/* 判负的那一行（"结果"）标红，一眼能看出这局输在哪 */
+.hd-row.fail .v { color: var(--danger); font-weight: 700; }
+.hd-ok { width: 100%; padding: 11px 0; font: inherit; font-size: 13px; font-weight: 600; }
+
+.hint { margin: 9px 0 0; font-size: 12px; line-height: 1.7; color: var(--sub); }
+
+.segs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+/* 画质面板：选项有 4~5 个，列宽自适应（窄屏自动换行成两排） */
+.segs.auto { grid-template-columns: repeat(auto-fit, minmax(76px, 1fr)); }
+.segs button {
+  padding: 11px 0;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--txt);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background 0.16s, border-color 0.16s, color 0.16s;
+}
+.segs button:hover { background: rgba(255, 255, 255, 0.1); }
+.segs button.on {
+  color: #04121f;
+  background: linear-gradient(135deg, var(--green), #4ad6a0);
+  border-color: transparent;
+}
+/* 未开发的玩法（斯诺克 / 俄式）：禁用态 + "敬请期待"角标。
+   浏览器默认的 :disabled 会把整个元素调得很灰、文字几乎看不清，这里自己压一版。 */
+.segs button.soon {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  color: var(--sub);
+  background: rgba(255, 255, 255, 0.02);
+  border-style: dashed;
+  cursor: not-allowed;
+  opacity: 1;
+}
+.segs button.soon:hover { background: rgba(255, 255, 255, 0.02); }
+.segs button.soon i {
+  font-style: normal;
+  font-size: 10px;
+  font-weight: 500;
+  opacity: 0.75;
+}
+
+.actions { display: flex; align-items: center; gap: 12px; margin-top: 20px; }
+
+/* 画质：每个小项一行（标题 + 分段按钮 + 说明） */
+.qrow { margin-bottom: 18px; }
+/* 同上：细分项靠 hidden 收起，显式兜住 display:none */
+.qrow[hidden] { display: none; }
+.qrow:last-child { margin-bottom: 4px; }
+.qrow .fl { margin-bottom: 8px; }
+
+.primary {
+  padding: 11px 26px;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  color: #04121f;
+  background: linear-gradient(135deg, var(--green), #4ad6a0);
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+  box-shadow: 0 6px 20px rgba(74, 214, 160, 0.28);
+}
+.ghost {
+  padding: 10px 18px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--sub);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: color 0.16s, border-color 0.16s;
+}
+.ghost:hover { color: var(--txt); border-color: var(--line-2); }
+.primary:hover { filter: brightness(1.07); }
+
+.saved { font-size: 12px; color: var(--green); opacity: 0; transition: opacity 0.3s; }
+.saved.on { opacity: 1; }
+
+.note {
+  margin: 20px 0 0;
+  padding-top: 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+  font-size: 12px;
+  line-height: 1.8;
+  color: rgba(255, 255, 255, 0.42);
+}
+.note b { color: var(--sub); }
+
+/* 帮助 */
+.sh {
+  margin: 22px 0 10px;
+  padding-left: 10px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  color: var(--accent);
+  border-left: 3px solid rgba(111, 211, 255, 0.6);
+}
+.sh:first-of-type { margin-top: 0; }
+
+ul.help { margin: 0; padding: 0; list-style: none; }
+ul.help li {
+  position: relative;
+  margin-bottom: 11px;
+  padding-left: 16px;
+  font-size: 13px;
+  line-height: 1.85;
+  color: #dbe3ee;
+}
+ul.help li::before {
+  content: "";
+  position: absolute;
+  left: 2px;
+  top: 10px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: rgba(111, 211, 255, 0.55);
+}
+ul.help li b { color: #fff; }
+
+/* 关于 */
+.about .logo {
+  font-size: 32px;
+  font-weight: 800;
+  letter-spacing: 6px;
+  background: linear-gradient(100deg, #ffffff 10%, var(--accent) 90%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.about .tagline { margin: 10px 0 22px; font-size: 12.5px; letter-spacing: 1px; color: var(--sub); }
+.about .meta { margin: 0; padding: 0; list-style: none; max-width: 520px; }
+.about .meta li {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 0;
+  font-size: 13px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+.about .meta span { color: var(--sub); }
+.about .meta b { font-weight: 600; }
+
+/* 退出确认 */
+.quit .hint { margin-top: 0; }
+
+/* 提示条 */
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 34px;
+  z-index: 9;
+  padding: 10px 20px;
+  font-size: 13px;
+  color: var(--txt);
+  background: rgba(20, 27, 38, 0.94);
+  border: 1px solid var(--line-2);
+  border-radius: 999px;
+  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.5);
+  transform: translate(-50%, 14px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.22s, transform 0.22s;
+}
+.toast.on { opacity: 1; transform: translate(-50%, 0); }
+
+/* 二级页面顶部的返回键：桌面端左右两栏同屏，不需要返回 */
+.back {
+  display: none;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px 8px 8px;
+  font: inherit;
+  font-size: 13.5px;
+  color: var(--sub);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  cursor: pointer;
+}
+.back .chev { font-size: 18px; line-height: 1; transform: translateY(-1px); }
+.back:hover { color: var(--txt); border-color: var(--line-2); background: rgba(255, 255, 255, 0.05); }
+
+/* ---------------- 子路由的面包屑 ----------------
+   给桌面 / 横屏用 —— 竖屏那条 sticky 的返回键就在同一位置，靠媒体查询把本条藏掉，别出现两个。
+   两者是同一件事的两种摆法：宽屏贴着标题下面，窄屏变成顶栏。
+*/
+.crumb { margin: -8px 0 18px; }
+.crumb button {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 5px 12px 5px 8px;
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--sub);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  cursor: pointer;
+}
+.crumb button:hover { color: var(--txt); border-color: var(--line-2); background: rgba(255, 255, 255, 0.09); }
+
+/* ---------------- 关于 · 联系方式 ---------------- */
+.contact { display: flex; align-items: flex-start; gap: 20px; margin-bottom: 4px; }
+.contact ul.help { flex: 1 1 auto; min-width: 0; }
+.qr {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 132px;
+  height: 132px;
+  padding: 8px;
+  border: 1px dashed var(--line-2);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+}
+.qr-ph { font-size: 12px; line-height: 1.7; text-align: center; color: var(--sub); }
+.qr .qr-img { width: 100%; height: 100%; object-fit: contain; border-radius: 6px; }
+
+/* ---------------- 窄屏 / 触摸屏（手机浏览器打开网页版时） ---------------- */
+@media (max-width: 980px) {
+  /* 安全区：刘海 / 圆角 / Android 手势条 */
+  .shell {
+    grid-template-columns: minmax(0, 1fr);
+    padding: calc(12px + env(safe-area-inset-top, 0px)) calc(12px + env(safe-area-inset-right, 0px))
+             calc(12px + env(safe-area-inset-bottom, 0px)) calc(12px + env(safe-area-inset-left, 0px));
+    gap: 12px;
+  }
+  .side { flex-direction: row; align-items: center; gap: 12px; padding: 10px 12px; }
+  .brand { padding: 0; }
+  .brand h1 { font-size: 20px; letter-spacing: 3px; }
+  .brand .sub, .brand .ver { display: none; }
+  /* 菜单横排可滑：隐藏滚动条，触摸目标 ≥44px */
+  .menu { flex-direction: row; overflow-x: auto; gap: 8px; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+  .menu::-webkit-scrollbar { display: none; }
+  .mi { min-height: 44px; padding: 10px 14px; font-size: 13px; white-space: nowrap; }
+  .mi .arrow { display: none; }
+  .foot { display: none; }
+  .cards { grid-template-columns: minmax(0, 1fr); }
+  .stage { padding: 16px; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
+  /* 手机上一律是大按钮 */
+  .segs button { padding: 13px 0; }
+  .segs.auto { grid-template-columns: repeat(auto-fit, minmax(80px, 1fr)); }
+  .chip-btn { min-height: 56px; }
+  /* 联系方式：二维码与文字上下排，别挤在一行里把二维码压扁 */
+  .contact { flex-direction: column; gap: 14px; }
+  .qr { align-self: center; }
+  .toast { bottom: calc(24px + env(safe-area-inset-bottom, 0px)); }
+  /* 挑战历史：六列摆不下，折成三行（玩家/结果 · 模式/次数 · 用时/日期） */
+  .hist-row { grid-template-columns: minmax(0, 1fr) auto; gap: 3px 10px; padding: 13px 14px; }
+  .hist-row .h-name { grid-column: 1; grid-row: 1; }
+  .hist-row .h-res { grid-column: 2; grid-row: 1; }
+  .hist-row .h-mode { grid-column: 1; grid-row: 2; }
+  .hist-row .h-slot { grid-column: 2; grid-row: 2; }
+  .hist-row .h-time { grid-column: 1; grid-row: 3; text-align: left; font-size: 12px; color: var(--sub); }
+  .hist-row .h-date { grid-column: 2; grid-row: 3; }
+}
+
+/* ---------------- 竖屏手机：二级页面 ----------------
+   只有竖屏才改结构（横屏的顶部标签栏本来就摆得下，没必要动）：
+     一级（body 无 data-lv）= 竖向主菜单整屏；二级（body[data-lv="2"]）= 内容页 + 返回键。
+   body 的 data-lv 由 launcher.js 在"窄屏 + 竖屏"时才写；桌面端不写，本段选择器也不生效。
+*/
+@media (max-width: 980px) and (orientation: portrait) {
+  .shell { gap: 0; padding: calc(10px + env(safe-area-inset-top, 0px)) calc(10px + env(safe-area-inset-right, 0px))
+           calc(10px + env(safe-area-inset-bottom, 0px)) calc(10px + env(safe-area-inset-left, 0px)); }
+
+  /* ---- 一级：主菜单（侧栏变整屏竖向列表） ---- */
+  .side {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0;
+    padding: 18px 14px calc(14px + env(safe-area-inset-bottom, 0px));
+  }
+  .brand { padding: 2px 6px 18px; }
+  .brand h1 { font-size: 26px; letter-spacing: 4px; }
+  .brand .sub { display: block; }
+  .brand .ver { display: block; }
+  /* 竖排列表：条目 56px 高，够手指点；条目多了也能滚 */
+  .menu {
+    flex-direction: column;
+    gap: 8px;
+    overflow-y: auto;
+    overflow-x: hidden;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+  .menu::-webkit-scrollbar { display: none; }
+  .mi { min-height: 56px; padding: 15px 16px; font-size: 15.5px; white-space: normal; }
+  .mi .arrow { display: block; }
+  /* 竖屏够高：把菜单垂直居中，别全挤在顶部留一大片空 */
+  .menu { justify-content: center; }
+
+  body:not([data-lv="2"]) .stage { display: none; }      /* 一级：内容页不出现 */
+  body[data-lv="2"] .side { display: none; }             /* 二级：菜单让位给内容页 */
+
+  /* ---- 二级：内容页 ---- */
+  .stage {
+    padding: 0 16px calc(16px + env(safe-area-inset-bottom, 0px));
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+  }
+  .back {
+    display: inline-flex;
+    position: sticky;
+    top: 0;
+    z-index: 3;
+    margin: 0 -16px 14px;
+    padding: 12px 16px calc(12px + 6px) 12px;
+    width: calc(100% + 32px);
+    border: 0;
+    border-bottom: 1px solid var(--line);
+    border-radius: 0;
+    background: rgba(14, 19, 27, 0.82);
+    backdrop-filter: blur(18px) saturate(1.1);
+    -webkit-backdrop-filter: blur(18px) saturate(1.1);
+  }
+  .back:hover { background: rgba(20, 27, 38, 0.9); }
+  /* 竖屏已经有顶栏那条返回键了，面包屑让位，别在同一处摆两个"返回" */
+  .crumb { display: none; }
+  .ph h2 { font-size: 19px; }
+}

@@ -1,0 +1,53 @@
+# ============================================================
+# 幻梦-星光桌球 · 根 .gitignore
+# 原则：只入库「手写的东西」，一切可由命令重建的产物都排除。
+# 入库：src/ · test/ · scripts/ · public/ · docs/ · electron/ ·
+#       android 源码（gradle 配置 + java + res）· 根配置文件
+# 排除：依赖、打包产物、IDE 配置、签名密钥（绝不能上传）
+# ============================================================
+
+# ---- 依赖 ----
+/node_modules/
+
+# ---- 构建产物（npm run build / build:electron / dist:all 可重建）----
+/dist/
+/dist-electron/
+/release/
+
+# ---- Android 构建缓存与生成物（android/.gitignore 也挡了一层）----
+/android/.gradle/
+/android/app/build/
+/android/build/
+/android/app/src/main/assets/public/
+/android/local.properties
+
+# ---- ⚠️ 签名密钥与凭证：绝不入库（泄露=别人可冒名发布你的 APK）----
+*.jks
+*.keystore
+keystore.properties
+*.key
+*.pem
+*.p12
+.env
+.env.*
+
+# ---- IDE / 编辑器 ----
+.idea/
+.vscode/
+*.iml
+
+# ---- WorkBuddy 本地数据（记忆 / 会话缓存）----
+.workbuddy/
+
+# ---- 临时与调试产物（项目惯例：tmp-* 用完即删）----
+tmp-*
+dbg_*
+probe*
+repro*
+verify*
+*.log
+*.tmp
+
+# ---- 系统文件 ----
+Thumbs.db
+.DS_Store

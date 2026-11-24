@@ -1,0 +1,45 @@
+# Electron 打包配置（electron-builder）
+# 产物输出到 release/：安装版（nsis）+ 免安装便携版（portable）
+appId: com.huanmeng.hmzq
+productName: 幻梦-星光桌球
+copyright: Copyright © 2026
+
+directories:
+  output: release
+
+# 游戏本体已经由 vite 打进 dist-electron/，node_modules 不需要进包
+files:
+  - dist-electron/**/*
+  - electron/**/*
+  - package.json
+
+asar: true
+compression: maximum
+
+# 直接用 npm 装好的 Electron 二进制，不重新从 github 下载（国内网络会超时）
+electronDist: node_modules/electron/dist
+
+win:
+  target:
+    - nsis
+    - portable
+  artifactName: ${productName}-${version}-${arch}.${ext}
+  # 若以后放了图标，取消下一行注释并放入 build/icon.ico（256×256）
+  # icon: build/icon.ico
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: 幻梦-星光桌球
+  language: '2052'
+
+portable:
+  artifactName: ${productName}-${version}-便携版-${arch}.${ext}
+
+mac:
+  target: dmg
+linux:
+  target: AppImage

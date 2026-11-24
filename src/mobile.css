@@ -1,0 +1,284 @@
+/* ==================================================================
+ * 移动端外壳样式
+ * ------------------------------------------------------------------
+ * 只在 <html data-mobile="1"> 时生效（由 src/mobile.js 在触摸设备上打标记），
+ * 桌面 / Electron 一个字节都不会被这里的规则影响。
+ * 红米 K30 参考：竖屏 393×873 dp，横屏 873×393 dp，395 ppi。
+ * ================================================================== */
+
+:root {
+  --safe-t: env(safe-area-inset-top, 0px);
+  --safe-b: env(safe-area-inset-bottom, 0px);
+  --safe-l: env(safe-area-inset-left, 0px);
+  --safe-r: env(safe-area-inset-right, 0px);
+}
+
+/* 手机上页面本身不该滚动 / 回弹 */
+html[data-mobile="1"], html[data-mobile="1"] body {
+  overscroll-behavior: none;
+  -webkit-text-size-adjust: 100%;
+  /* 长按不选中文字、不弹「复制 / 搜索」菜单。
+     微信内置浏览器（X5 / XWeb）只认带前缀的 -webkit-user-select，无前缀版本会被忽略；
+     而长按菜单在 touchstart 阶段就开始计时，光靠 pointerdown 里的 preventDefault 够不着
+     —— 所以这里禁选择、mobile.js 里再补一道 touchstart，两层一起才管用。
+     输入类元素单独放开，免得以后加输入框时被误伤；桌面端不写 data-mobile，零影响。 */
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+html[data-mobile="1"] input,
+html[data-mobile="1"] textarea,
+html[data-mobile="1"] [contenteditable] {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+/* ---------- 开球键 + 显眼的大蓄力条 ----------
+   ⚠️ 桌面 / web 也要显示（2026-09-24）：出杆不该只有"按住鼠标左键"一条路，
+   键鼠用户同样想要一个能点的按钮（按住蓄力、松手出杆）。
+   这里是**桌面尺寸**，移动端的大按钮尺寸由下面的 html[data-mobile="1"] 覆盖。 */
+#shoot-dock {
+  position: fixed;
+  z-index: 25;
+  right: calc(14px + var(--safe-r));
+  bottom: calc(74px + var(--safe-b));
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  /* 整个 dock 都禁掉长按手势：手指从按钮滑到蓄力条上继续按住时，也不该触发选择 */
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+#btn-shoot {
+  flex: none;
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  color: #1d0b04;
+  background: linear-gradient(135deg, #ffd27e, #ff7a45);
+  border: none;
+  box-shadow: 0 6px 18px rgba(255, 122, 69, 0.45);
+  cursor: pointer;
+  touch-action: none;            /* 手势交给 JS，别让浏览器抢去做滚动 / 缩放 */
+  -webkit-tap-highlight-color: transparent;
+  /* 长按蓄力时不能被选中：微信里选中「开球」二字就会弹选择菜单，直接打断蓄力 */
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  transition: transform .08s ease, filter .08s ease;
+}
+#btn-shoot.pressed { transform: scale(0.93); filter: brightness(1.12); }
+#btn-shoot.disabled { opacity: .38; box-shadow: none; }
+
+/* 结果提示条（🤖 人机对战：电脑出杆时写"它打算打哪颗球、多大力度"）：
+   贴在 dock 正上方、右对齐（dock 是 fixed，所以这里的 absolute 以它为锚点，
+   双人 / 人机模式 dock 上移时提示条跟着走，不用再写一份 duo 偏移）。
+   ⚠️ 同样是 flex 容器里的元素，`[hidden]` 必须显式写 display:none。 */
+#auto-tip {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 10px);
+  z-index: 1;
+  /* ⚠️ 必须显式给宽度：绝对定位元素的可宽度 = containing block 宽 − left − right。
+     单人模式下 dock 里有「开球」键、宽度正常；但双人 / 人机模式两颗开球键在 #duo-dock 里，
+     这个 dock 的宽高都塌成 0 → 提示条被算成 0 宽、每个字一行竖着排（截图里才看得出来）。
+     max-content 让宽度取决于内容，再由下面的 max-width 兜住长文案。 */
+  width: max-content;
+  max-width: min(76vw, 330px);
+  padding: 9px 14px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  text-align: right;
+  color: var(--txt);
+  background: rgba(18, 22, 30, 0.92);
+  border: 1px solid rgba(110, 200, 255, 0.42);
+  border-radius: 12px;
+  backdrop-filter: blur(10px);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.45);
+  pointer-events: none;          /* 只是提示，别挡住下面的按钮 */
+  -webkit-user-select: none;
+  user-select: none;
+}
+#auto-tip[hidden] { display: none; }
+
+#charge-mobile {
+  display: none;
+  align-items: center;
+  gap: 10px;
+  width: min(46vw, 360px);
+  padding: 8px 12px;
+  background: rgba(18, 22, 30, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  border-radius: 14px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+}
+#charge-mobile.show { display: flex; }
+#charge-mobile > i {
+  display: block;
+  flex: 1;
+  height: 14px;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.14);
+  overflow: hidden;
+}
+#charge-mobile > i > b {
+  display: block;
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, #7ee787, #ffcb6b, #ff6b6b);
+}
+#charge-mobile > span {
+  min-width: 44px;
+  text-align: right;
+  font-size: 14px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: #fff;
+}
+
+/* ---------- HUD：手机上收紧尺寸，避开刘海与圆角 ---------- */
+html[data-mobile="1"] .hud {
+  padding: 9px 11px;
+  font-size: 12px;
+  line-height: 1.55;
+  border-radius: 10px;
+}
+html[data-mobile="1"] #panel-info {
+  top: calc(10px + var(--safe-t));
+  left: calc(10px + var(--safe-l));
+  min-width: 168px;
+}
+html[data-mobile="1"] #panel-pot {
+  top: calc(10px + var(--safe-t));
+  right: calc(10px + var(--safe-r));
+  min-width: 132px;
+}
+html[data-mobile="1"] .title { font-size: 13px; letter-spacing: 1px; margin-bottom: 4px; }
+html[data-mobile="1"] .row { gap: 10px; }
+html[data-mobile="1"] .chip { width: 20px; height: 20px; font-size: 10px; }
+html[data-mobile="1"] .bar { height: 5px; }
+
+/* ---------- 底部按钮：触摸目标不小于 44px ---------- */
+html[data-mobile="1"] .dock-btn {
+  min-height: 44px;
+  padding: 10px 14px;
+  font-size: 12.5px;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+html[data-mobile="1"] #dock-right {
+  right: calc(12px + var(--safe-r));
+  bottom: calc(12px + var(--safe-b));
+  gap: 8px;
+}
+html[data-mobile="1"] #btn-help {
+  left: calc(12px + var(--safe-l));
+  bottom: calc(12px + var(--safe-b));
+  width: 44px;
+  height: 44px;
+  font-size: 18px;
+}
+
+/* ---------- 设置弹窗：横屏高度很矮，必须能滚动 ---------- */
+html[data-mobile="1"] .settings-card {
+  width: min(400px, 94vw);
+  max-height: calc(100dvh - 28px);
+  max-height: calc(100vh - 28px);      /* 不支持 dvh 的旧 WebView 回落 */
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 18px 18px 20px;
+}
+html[data-mobile="1"] .settings-card h2 { margin-bottom: 14px; font-size: 16px; }
+html[data-mobile="1"] .settings-row { margin-bottom: 15px; }
+html[data-mobile="1"] .mode-grid button { padding: 13px 0; }
+html[data-mobile="1"] .slider-row input[type=range] { height: 30px; }
+html[data-mobile="1"] .settings-close { padding: 14px 0; }
+html[data-mobile="1"] .menu-back { padding: 12px 0; }
+
+/* ---------- 帮助：手机上强制单列 ---------- */
+html[data-mobile="1"] .help-body {
+  columns: 1;
+  padding: 18px clamp(14px, 4vw, 32px) 40px;
+}
+html[data-mobile="1"] .help-head { padding: 14px clamp(14px, 4vw, 32px); }
+html[data-mobile="1"] .help-head button { width: 40px; height: 40px; font-size: 17px; }
+html[data-mobile="1"] .help-sec li { font-size: 12px; line-height: 1.8; }
+
+/* ---------- 结算弹窗 ---------- */
+html[data-mobile="1"] .result-card { padding: 22px 20px 20px; }
+html[data-mobile="1"] .result-card h2 { font-size: 22px; letter-spacing: 2px; }
+html[data-mobile="1"] .result-stats { margin-bottom: 18px; padding: 12px 14px; }
+html[data-mobile="1"] .result-actions button { padding: 14px 0; }
+html[data-mobile="1"] .confirm-actions button { padding: 13px 0; }
+
+/* 移动端：手指点击目标要够大，按钮放大回原来的 78px */
+html[data-mobile="1"] #btn-shoot { width: 78px; height: 78px; font-size: 16px; }
+
+/* ---------- 本地双人（移动端）----------
+   两个开球键比单人的更大（一边一个，误按的代价是替对手打一杆）；
+   底部大蓄力条要抬到按键上方 —— 它是横向的，和左右两个圆键在同一高度会叠住。
+   ⚠️ HUD 让位这条**必须带 html[data-mobile="1"] 前缀**：移动端面板的 top 是
+      `html[data-mobile="1"] #panel-info` 定的，优先级比 style.css 里的
+      `body.duo #panel-info` 高 —— 不加前缀的话手机上横幅会压住状态面板。 */
+html[data-mobile="1"] body.duo #panel-info,
+html[data-mobile="1"] body.duo #panel-pot { top: calc(66px + var(--safe-t)); }
+html[data-mobile="1"] .duo-btn { width: 82px; height: 82px; }
+html[data-mobile="1"] .duo-btn b { font-size: 15px; }
+html[data-mobile="1"] #duo-dock { bottom: calc(74px + var(--safe-b)); }
+html[data-mobile="1"] body.duo #shoot-dock { bottom: calc(168px + var(--safe-b)); }
+html[data-mobile="1"] #turn-banner { top: 10px; gap: 6px; padding: 6px 8px; }
+html[data-mobile="1"] #turn-banner .duo-side { min-width: 74px; font-size: 11px; }
+html[data-mobile="1"] #turn-banner .turn-who { font-size: 19px; }
+html[data-mobile="1"] #turn-banner .turn-note { font-size: 11px; max-width: 180px; }
+
+/* ---------- 竖屏（窄）：进一步压缩宽度 ---------- */
+@media (orientation: portrait) {
+  html[data-mobile="1"] #panel-info { min-width: 148px; }
+  html[data-mobile="1"] #panel-pot  { min-width: 116px; }
+  html[data-mobile="1"] #shoot-dock { bottom: calc(88px + var(--safe-b)); gap: 10px; }
+  html[data-mobile="1"] #duo-dock { bottom: calc(88px + var(--safe-b)); }
+  html[data-mobile="1"] body.duo #shoot-dock { bottom: calc(182px + var(--safe-b)); }
+  html[data-mobile="1"] #charge-mobile { width: min(52vw, 300px); }
+  html[data-mobile="1"] #dock-right .dock-btn { padding: 10px 11px; font-size: 12px; }
+  /* 窄屏放不下"上一杆发生了什么"那一行，横幅只留双方球组与轮到谁 */
+  html[data-mobile="1"] #turn-banner .turn-note { display: none; }
+}
+
+/* ---------- 矮屏（横屏手机 / 折叠机外屏）：让面板让出高度 ---------- */
+@media (max-height: 460px) {
+  html[data-mobile="1"] .hud { padding: 7px 10px; font-size: 11.5px; line-height: 1.45; }
+  html[data-mobile="1"] .title { font-size: 12px; margin-bottom: 2px; }
+  html[data-mobile="1"] #btn-shoot { width: 68px; height: 68px; font-size: 15px; }
+  html[data-mobile="1"] #shoot-dock { bottom: calc(66px + var(--safe-b)); }
+  html[data-mobile="1"] .duo-btn { width: 70px; height: 70px; }
+  html[data-mobile="1"] #duo-dock { bottom: calc(66px + var(--safe-b)); }
+  html[data-mobile="1"] body.duo #shoot-dock { bottom: calc(148px + var(--safe-b)); }
+  html[data-mobile="1"] #turn-banner { top: 8px; padding: 4px 6px; }
+  html[data-mobile="1"] #turn-banner .turn-who { font-size: 16px; }
+  html[data-mobile="1"] #charge-mobile { width: min(40vw, 300px); padding: 6px 10px; }
+  html[data-mobile="1"] .dock-btn { min-height: 40px; padding: 8px 12px; font-size: 12px; }
+  html[data-mobile="1"] #btn-help { width: 40px; height: 40px; }
+  html[data-mobile="1"] .settings-card { width: min(430px, 96vw); }
+}
+
+/* ---------- 自由球模式：摆放白球 ----------
+   摆放阶段要把「开球」键藏起来：这时候点它本来也没有意义（蓄力被 canCharge 挡住），
+   留在屏幕上只会挡住手指、还容易让人以为"点了没反应"。
+   ⚠️ 用 body.placing 就够（#shoot-dock 的 display:flex 没有 html[...] 前缀），
+      但后面的 #duo-dock 是 display:flex + 无前缀，所以两条都要能盖住（见下面同理的一条）。 */
+body.placing #shoot-dock,
+body.placing #duo-dock { display: none; }
+
+/* 浮条抬到右下角按钮上方，两者不叠（窄屏时它是通栏的两行） */
+html[data-mobile="1"] #place-bar { bottom: calc(74px + var(--safe-b)); }
+@media (max-height: 460px) {
+  html[data-mobile="1"] #place-bar { bottom: calc(62px + var(--safe-b)); }
+  html[data-mobile="1"] #place-bar .place-tip { font-size: 12px; }
+}

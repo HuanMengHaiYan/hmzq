@@ -1,0 +1,801 @@
+:root {
+  --panel: rgba(18, 22, 30, 0.72);
+  --line: rgba(255, 255, 255, 0.14);
+  --txt: #eef2f7;
+  --sub: #9aa7b8;
+  --accent: #6fd3ff;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  overflow: hidden;
+  background: #0b0e13;
+  font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+  color: var(--txt);
+}
+
+#app { position: fixed; inset: 0; }
+canvas { display: block; }
+
+/* ---------- HUD ---------- */
+.hud {
+  position: fixed;
+  z-index: 10;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  backdrop-filter: blur(10px);
+  padding: 12px 14px;
+  font-size: 13px;
+  line-height: 1.7;
+  user-select: none;
+}
+
+#panel-info { top: 16px; left: 16px; min-width: 210px; }
+#panel-pot  { top: 16px; right: 16px; min-width: 160px; }
+
+.title {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  margin-bottom: 6px;
+  color: #fff;
+}
+.title span { color: var(--accent); font-weight: 400; font-size: 11px; letter-spacing: 1px; }
+
+.row { display: flex; justify-content: space-between; gap: 14px; }
+/* 单人模式里"用不上的那一行"靠 hidden 隐藏 —— 但 display:flex 会盖掉 UA 的
+   [hidden]{display:none}，不写这条的话隐藏属性形同虚设（限次模式会多出一行"得分"）。 */
+.row[hidden] { display: none; }
+.k { color: var(--sub); }
+.v { color: #fff; font-variant-numeric: tabular-nums; }
+.v.state-ready { color: #7ee787; }
+.v.state-run { color: #ffcb6b; }
+
+kbd {
+  background: rgba(255,255,255,.1);
+  border: 1px solid var(--line);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  padding: 1px 6px;
+  font-size: 11px;
+  font-family: inherit;
+}
+
+.bar {
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(255,255,255,.12);
+  overflow: hidden;
+  margin-top: 6px;
+}
+.bar > i {
+  display: block;
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, #7ee787, #ffcb6b, #ff6b6b);
+  transition: width .15s ease;
+}
+
+#potted-list,
+#potted-list-1,
+#potted-list-2 {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 8px;
+  min-height: 22px;
+}
+/* ⚠️ 这两条不能省：和 .row[hidden] 是同一个坑 —— 容器一旦参与 flex 布局，
+   浏览器默认的 [hidden] 规则就被盖掉了，单人栏和双人两栏会一起显示出来。 */
+#potted-duo[hidden],
+#potted-solo[hidden] { display: none; }
+/* 双人两栏：中间留点空隙，别糊成一条 */
+#potted-duo .pot-side + .pot-side { margin-top: 10px; }
+.chip {
+  width: 22px; height: 22px;
+  border-radius: 50%;
+  display: grid; place-items: center;
+  font-size: 11px; font-weight: 700;
+  color: #111;
+  box-shadow: inset 0 -3px 6px rgba(0,0,0,.35);
+}
+
+/* ---------- 面板收起 / 展开 ---------- */
+/* 小按钮贴在面板右上角；点一下把面板折成最小形态（台面立刻多出一大块视野）。
+   文案由 hud.js 在「收起 ↔ 展开」之间切。 */
+.fold-btn {
+  float: right;
+  background: rgba(255,255,255,.08);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--sub);
+  font: inherit;
+  font-size: 11px;
+  line-height: 1;
+  padding: 3px 7px;
+  cursor: pointer;
+  user-select: none;
+}
+.fold-btn:hover { color: #fff; border-color: rgba(255,255,255,.34); }
+.pot-top { display: flow-root; margin: -4px -4px 6px 0; }
+.pot-top .fold-btn { float: right; }
+
+/* 信息栏收起 → 只留标题那一行（模式名还在，一眼知道在玩什么） */
+#panel-info.folded .row,
+#panel-info.folded .bar { display: none; }
+
+/* 进袋栏收起 → 只留最后一颗进球（`:not(:last-child)` 把前面的都藏掉，
+   不用改 hud.js 的渲染逻辑，展开时原样回来） */
+#panel-pot.folded #potted-list .chip:not(:last-child),
+#panel-pot.folded #potted-list-1 .chip:not(:last-child),
+#panel-pot.folded #potted-list-2 .chip:not(:last-child) { display: none; }
+
+/* 一颗球都没进时的透明占位格：只在收起态、且那一栏确实是空的时候出现。
+   ⚠️ 靠 `#potted-list:empty` 判断 —— 列表里不能留任何文本节点（hud.js 用 innerHTML='' 清空，
+   正好是空的），否则 `:empty` 不成立、占位格永远不出来。 */
+.chip-empty { display: none; }
+#panel-pot.folded #potted-list:empty + .chip-empty,
+#panel-pot.folded #potted-list-1:empty + .chip-empty,
+#panel-pot.folded #potted-list-2:empty + .chip-empty {
+  display: block;
+  width: 22px; height: 22px;
+  border-radius: 50%;
+  border: 1px dashed rgba(255,255,255,.28);
+  background: transparent;
+  margin-top: 8px;
+}
+
+/* ---------- Loading ---------- */
+#loading {
+  position: fixed; inset: 0; z-index: 50;
+  display: grid; place-items: center;
+  background: #0b0e13;
+  transition: opacity .5s ease;
+  letter-spacing: 3px;
+  color: var(--sub);
+}
+#loading.hide { opacity: 0; pointer-events: none; }
+
+/* ---------- Error overlay ---------- */
+#err {
+  position: fixed;
+  z-index: 99;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%);
+  max-width: min(720px, 92vw);
+  display: none;
+  background: rgba(60, 14, 18, 0.92);
+  border: 1px solid #d9534f;
+  border-radius: 10px;
+  padding: 12px 16px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: #ffdada;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+#err b { color: #ff8f8f; }
+
+/* ---------- 底部动作条（右下：视角回归 / 重开本局 / 设置）---------- */
+#dock-right {
+  position: fixed;
+  bottom: 16px;
+  right: 16px;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dock-btn {
+  padding: 8px 15px;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: inherit;
+  color: var(--txt);
+  background: rgba(18, 22, 30, 0.72);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  backdrop-filter: blur(10px);
+  cursor: pointer;
+  user-select: none;
+}
+.dock-btn:hover { filter: brightness(1.15); }
+.dock-btn:active { transform: translateY(1px); }
+
+/* 左下角：帮助（问号） */
+#btn-help { position: fixed; bottom: 16px; left: 16px; z-index: 20; }
+.dock-btn.round {
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border-radius: 50%;
+  font-size: 17px;
+  font-weight: 700;
+  color: #04121f;
+  background: linear-gradient(135deg, #ffffff, #c9d6e6);
+  border: none;
+  box-shadow: 0 4px 14px rgba(201, 214, 230, 0.28);
+}
+
+.dock-btn.warm {
+  color: #04121f;
+  background: linear-gradient(135deg, #ffd27e, #ff9f5a);
+  border: none;
+  box-shadow: 0 4px 14px rgba(255, 159, 90, 0.32);
+}
+.dock-btn.accent {
+  color: #04121f;
+  background: linear-gradient(135deg, #6fd3ff, #4a9eff);
+  border: none;
+  box-shadow: 0 4px 14px rgba(74, 158, 255, 0.32);
+}
+
+/* ---------- 自由球模式：摆放白球浮条（拖动 → 确定 → 才进入瞄准）---------- */
+#place-bar {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%);
+  z-index: 24;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 12px 10px 18px;
+  background: rgba(18, 22, 30, 0.86);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 14px;
+  backdrop-filter: blur(12px);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.45);
+  user-select: none;
+}
+/* ⚠️ 与 .row[hidden] 同一个坑：这里是 flex，会盖掉浏览器默认的 [hidden] 规则 */
+#place-bar[hidden] { display: none; }
+#place-bar .place-tip { margin: 0; font-size: 13px; color: var(--sub); }
+#place-ok {
+  flex: none;
+  padding: 10px 24px;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  color: #04121f;
+  background: linear-gradient(135deg, #6fd3ff, #4a9eff);
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(74, 158, 255, 0.32);
+}
+#place-ok:hover { filter: brightness(1.1); }
+#place-ok:active { transform: translateY(1px); }
+
+/* 窄屏：浮条改成一列，占满宽度，按钮好按 */
+@media (max-width: 520px) {
+  #place-bar {
+    left: 12px;
+    right: 12px;
+    bottom: 16px;
+    transform: none;
+    flex-direction: column;
+    gap: 10px;
+    padding: 14px;
+    text-align: center;
+  }
+  #place-bar .place-tip { font-size: 12.5px; }
+  #place-ok { width: 100%; padding: 13px 0; }
+}
+
+/* ---------- 本地双人：顶部回合横幅 + 左右两个开球键 ----------
+   两个人共用一台设备，最容易出的状况就是"上一个人打完没换手、另一个人接着按"，
+   所以提示必须够醒目：横幅占住屏幕顶部正中（左右两块是双方的球组与剩余球数，
+   中间大字是"现在轮到谁"），开球键也一人一个（玩家2 在左、玩家1 在右），
+   只有当前回合那个可按，另一个直接置灰。
+   ⚠️ 两个容器都是 flex，`[hidden]` 那条规则必须显式写（同 .row[hidden] 的坑）。 */
+#turn-banner {
+  position: fixed;
+  z-index: 22;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
+  max-width: min(680px, calc(100vw - 32px));
+  padding: 8px 12px;
+  background: rgba(18, 22, 30, 0.88);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  backdrop-filter: blur(10px);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.45);
+  user-select: none;
+}
+#turn-banner[hidden],
+#duo-dock[hidden] { display: none; }
+
+#turn-banner .duo-side {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 104px;
+  padding: 4px 8px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  text-align: center;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--sub);
+}
+#turn-banner .duo-side .duo-name { font-size: 12.5px; font-weight: 800; color: var(--txt); }
+#turn-banner .duo-side .duo-left { font-variant-numeric: tabular-nums; }
+/* 轮到这一侧：整块点亮（这就是"轮到谁"最醒目的那一层） */
+#turn-banner .duo-side.on {
+  border-color: rgba(255, 200, 90, 0.55);
+  background: rgba(255, 200, 90, 0.13);
+  color: #ffd89a;
+}
+#turn-banner .duo-side.on .duo-name { color: #ffd89a; }
+/* 手里有球的一方（白球落袋后对方可以自由摆白球） */
+#turn-banner .duo-side.inhand { border-color: rgba(111, 211, 255, 0.5); }
+#turn-banner .duo-side.inhand .duo-left::after { content: ' · 手中球'; color: var(--accent); }
+
+#turn-banner .turn-mid {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-width: 128px;
+  padding: 0 6px;
+}
+#turn-banner .turn-who {
+  font-size: 23px;
+  font-weight: 800;
+  letter-spacing: 2px;
+  color: #ffd89a;
+  text-shadow: 0 2px 12px rgba(255, 180, 60, 0.35);
+}
+#turn-banner .turn-go { font-size: 11px; color: var(--sub); }
+#turn-banner .turn-note {
+  margin-top: 2px;
+  max-width: 260px;
+  font-size: 11.5px;
+  line-height: 1.35;
+  text-align: center;
+  color: var(--accent);
+}
+#turn-banner.over .turn-who { color: #7ee787; }
+
+/* 双人模式：HUD 的两块面板让到横幅下面（不然顶部正中会被压住） */
+body.duo #panel-info,
+body.duo #panel-pot { top: 88px; }
+
+/* 双人模式：#duo-dock 占着 "bottom: 74px" 这条线（左右各一颗开球键），
+   而 #shoot-dock 默认也在 74px —— 它里面现在有「🎯 自动进球」，不挪开就会盖在
+   玩家1 的开球键上（表现为被压成一个小圆点、文字被裁掉）。
+   抬到两颗开球键上方：74(dock) + 74(键高) + 12(间隙)。
+   手机端另有一份更高的覆盖（见 mobile.css 的 html[data-mobile="1"] body.duo）。 */
+body.duo #shoot-dock { bottom: calc(160px + var(--safe-b, 0px)); }
+
+#duo-dock {
+  position: fixed;
+  z-index: 25;
+  left: calc(76px + var(--safe-l, 0px));
+  right: calc(14px + var(--safe-r, 0px));
+  bottom: calc(74px + var(--safe-b, 0px));
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  touch-action: none;                 /* 手势交给 JS，别被浏览器抢去做滚动 / 缩放 */
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+.duo-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 74px;
+  height: 74px;
+  border-radius: 50%;
+  border: none;
+  font-family: inherit;
+  color: #1d0b04;
+  background: linear-gradient(135deg, #ffd27e, #ff7a45);
+  box-shadow: 0 6px 18px rgba(255, 122, 69, 0.45);
+  cursor: pointer;
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  transition: transform .08s ease, filter .08s ease;
+}
+/* 玩家2 冷色、玩家1 暖色：一眼分得清按的是哪一边 */
+.duo-btn.p2 {
+  background: linear-gradient(135deg, #b6e7ff, #4a9eff);
+  box-shadow: 0 6px 18px rgba(74, 158, 255, 0.45);
+}
+.duo-btn b { font-size: 14px; font-weight: 800; letter-spacing: 1px; }
+.duo-btn small { font-size: 11px; font-weight: 700; opacity: .72; }
+.duo-btn.pressed { transform: scale(0.93); filter: brightness(1.12); }
+.duo-btn.disabled { opacity: .38; box-shadow: none; }
+
+/* ---------- 跟随鼠标的蓄力条 ---------- */
+#charge-pop {
+  position: fixed;
+  z-index: 40;
+  left: 0;
+  top: 0;
+  display: none;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  background: rgba(18, 22, 30, 0.88);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 10px;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.45);
+  pointer-events: none;
+  user-select: none;
+}
+#charge-pop.show { display: flex; }
+#charge-pop > i {
+  display: block;
+  width: 96px;
+  height: 10px;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.14);
+  overflow: hidden;
+}
+#charge-pop > i > b {
+  display: block;
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, #7ee787, #ffcb6b, #ff6b6b);
+}
+#charge-pop > span {
+  min-width: 40px;
+  text-align: right;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: #fff;
+}
+
+/* ---------- 设置弹窗 ---------- */
+#settings-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: none;            /* 由 JS 切换为 flex */
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(3px);
+}
+.settings-card {
+  width: min(380px, 92vw);
+  background: rgba(20, 25, 34, 0.97);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 22px 24px;
+  color: var(--txt);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+.settings-card h2 {
+  margin: 0 0 18px;
+  font-size: 17px;
+  letter-spacing: 1px;
+}
+.settings-row { margin-bottom: 18px; }
+/* 画质面板的三行细分项靠 hidden 收起。⚠️ 显式写这条：
+   哪天给 .settings-row 加了 display:flex，UA 的 [hidden] 就会被盖掉而静默失效。 */
+.settings-row[hidden] { display: none; }
+.settings-row > label {
+  display: block;
+  font-size: 13px;
+  color: var(--sub);
+  margin-bottom: 9px;
+}
+.mode-grid { display: flex; gap: 8px; }
+.mode-grid button {
+  flex: 1;
+  padding: 11px 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--txt);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  cursor: pointer;
+}
+.mode-grid button.active {
+  color: #04121f;
+  background: linear-gradient(135deg, #7ee787, #4ad6a0);
+  border-color: transparent;
+}
+.slider-row { display: flex; align-items: center; gap: 12px; }
+.slider-row input[type=range] { flex: 1; accent-color: #6fd3ff; }
+.slider-val {
+  width: 46px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: #fff;
+}
+.settings-close {
+  margin-top: 8px;
+  width: 100%;
+  padding: 12px 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: #04121f;
+  background: linear-gradient(135deg, #6fd3ff, #4a9eff);
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+}
+.settings-close:hover { filter: brightness(1.07); }
+
+/* 操作模式被启动器锁定：按钮禁用，只标出当前模式 */
+.mode-grid button:disabled { opacity: 0.42; cursor: not-allowed; }
+.mode-grid button.active:disabled { opacity: 0.78; }
+.lock-note,
+.settings-row .hint { margin: 10px 0 0; font-size: 12px; color: #ffd27e; }
+.settings-row .hint { color: var(--sub); line-height: 1.6; }
+
+/* 曲目选择复用模式按钮的样式，但排在音量滑块下面 */
+.settings-row .mode-grid { margin-top: 10px; }
+
+/* ---------- 「☰ 主菜单」：位于设置弹窗顶部（从启动器进入时才出现） ---------- */
+.menu-back {
+  display: block;
+  width: 100%;
+  margin-bottom: 14px;
+  padding: 9px 0;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: inherit;
+  color: var(--txt);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  cursor: pointer;
+}
+.menu-back:hover { background: rgba(255, 255, 255, 0.13); }
+
+/* 设置弹窗里"只读"的一行说明（例如球体设置） */
+.card-note {
+  margin: 2px 0 16px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--sub);
+}
+
+/* ---------- 设置弹窗里的「画质」分区 ---------- */
+.settings-sub {
+  margin: 22px 0 14px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(255, 255, 255, 0.09);
+  font-size: 13.5px;
+  font-weight: 600;
+  letter-spacing: 1px;
+  color: var(--txt);
+}
+/* 选项多（最多 5 个），允许换行 —— 手机上按钮别被挤成一条线 */
+.q-grid { flex-wrap: wrap; }
+.q-grid button { min-width: 64px; padding: 9px 12px; font-size: 12.5px; }
+#q-now { color: #9fd8ff; font-variant-numeric: tabular-nums; }
+
+/* ---------- 通用确认弹窗（「重开本局」这类会丢进度的操作先问一句） ----------
+   卡片与按钮复用下面 .confirm-card / .confirm-actions 那套（返回主菜单确认用的），
+   只有遮罩层是自己的 id —— 两者是独立 DOM，可以同时存在但不会同时打开。 */
+#ask-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 95;
+  display: none;            /* 由 JS 切换为 flex */
+  align-items: center;
+  justify-content: center;
+  background: rgba(6, 9, 14, 0.7);
+  backdrop-filter: blur(6px);
+}
+
+/* ---------- 放弃本局确认（叠在设置弹窗之上） ---------- */
+#confirm-menu {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: none;            /* 由 JS 切换为 flex */
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.5);
+}
+.confirm-card {
+  width: min(360px, 92vw);
+  background: rgba(24, 29, 39, 0.98);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 20px 22px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.55);
+}
+.confirm-card h3 { margin: 0 0 10px; font-size: 16px; }
+.confirm-card p { margin: 0 0 18px; font-size: 13px; line-height: 1.7; color: var(--sub); }
+.confirm-actions { display: flex; gap: 10px; }
+.confirm-actions button {
+  flex: 1;
+  padding: 10px 0;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: inherit;
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+}
+.confirm-actions .ghost {
+  color: var(--txt);
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--line);
+}
+.confirm-actions .ghost:hover { background: rgba(255, 255, 255, 0.15); }
+.confirm-actions .danger {
+  color: #2b0505;
+  background: linear-gradient(135deg, #ffb06b, #ff6b6b);
+}
+.confirm-actions .danger:hover { filter: brightness(1.07); }
+
+/* ---------- 结算弹窗（胜利 / 失败 / 黑 8 自爆） ---------- */
+#result-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: none;            /* 由 JS 切换为 flex */
+  align-items: center;
+  justify-content: center;
+  background: rgba(6, 9, 14, 0.78);
+  backdrop-filter: blur(7px);
+}
+.result-card {
+  width: min(420px, calc(100vw - 48px));
+  padding: 30px 30px 26px;
+  text-align: center;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: linear-gradient(180deg, rgba(24, 30, 41, 0.96), rgba(14, 18, 26, 0.96));
+  box-shadow: 0 26px 70px rgba(0, 0, 0, 0.55);
+  animation: result-pop 0.32s cubic-bezier(0.2, 1.3, 0.4, 1);
+}
+@keyframes result-pop {
+  from { opacity: 0; transform: translateY(14px) scale(0.96); }
+  to   { opacity: 1; transform: none; }
+}
+.result-tag {
+  display: inline-block;
+  margin-bottom: 12px;
+  padding: 4px 12px;
+  font-size: 11px;
+  letter-spacing: 3px;
+  border-radius: 999px;
+  color: #0b0e13;
+  background: var(--accent);
+}
+.result-card h2 {
+  margin: 0 0 10px;
+  font-size: 26px;
+  letter-spacing: 3px;
+}
+.result-card > p {
+  margin: 0 0 20px;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--sub);
+}
+.result-stats {
+  margin: 0 0 22px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+}
+.result-stats .row {
+  display: flex;
+  justify-content: space-between;
+  padding: 5px 0;
+  font-size: 13px;
+}
+.result-actions { display: flex; gap: 10px; }
+.result-actions button {
+  flex: 1;
+  padding: 11px 0;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--txt);
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: rgba(255, 255, 255, 0.07);
+  cursor: pointer;
+}
+.result-actions button:hover { filter: brightness(1.12); }
+.result-actions .primary {
+  color: #08131a;
+  font-weight: 600;
+  border-color: transparent;
+  background: var(--accent);
+}
+
+/* 三种结算的配色（data-tone 由 result.js 写入） */
+#result-modal[data-tone="win"] .result-tag { background: #ffd76e; }
+#result-modal[data-tone="win"] .result-card h2 { color: #ffe6a4; }
+#result-modal[data-tone="win"] .result-actions .primary { background: #ffd76e; }
+#result-modal[data-tone="lose"] .result-tag { background: #8fa0b5; }
+#result-modal[data-tone="lose"] .result-card h2 { color: #c7d2de; }
+#result-modal[data-tone="foul8"] .result-tag { background: #ff7a7a; }
+#result-modal[data-tone="foul8"] .result-card h2 { color: #ff9d9d; }
+#result-modal[data-tone="foul8"] .result-actions .primary { background: #ff7a7a; }
+
+/* ---------- 帮助：全屏弹窗 ---------- */
+#help-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: none;            /* 由 JS 切换为 flex */
+  padding: 0;
+  background: rgba(6, 9, 14, 0.86);
+  backdrop-filter: blur(6px);
+}
+.help-sheet {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  background: rgba(13, 17, 24, 0.92);
+}
+.help-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px clamp(20px, 5vw, 72px);
+  border-bottom: 1px solid var(--line);
+}
+.help-head h2 { margin: 0; font-size: 18px; letter-spacing: 2px; }
+.help-head button {
+  width: 34px;
+  height: 34px;
+  font-size: 16px;
+  font-family: inherit;
+  color: var(--txt);
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  cursor: pointer;
+}
+.help-head button:hover { background: rgba(255, 255, 255, 0.18); }
+
+.help-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 22px clamp(20px, 5vw, 72px) 56px;
+  columns: 2;
+  column-gap: 40px;
+}
+@media (max-width: 860px) { .help-body { columns: 1; } }
+.help-sec { break-inside: avoid; margin: 0 0 24px; }
+.help-sec h3 {
+  margin: 0 0 10px;
+  font-size: 13px;
+  letter-spacing: 1px;
+  color: var(--accent);
+}
+.help-sec ul { margin: 0; padding-left: 18px; }
+.help-sec li {
+  margin-bottom: 8px;
+  font-size: 12.5px;
+  line-height: 1.85;
+  color: #cfd8e4;
+}
+.help-sec b { color: #fff; }

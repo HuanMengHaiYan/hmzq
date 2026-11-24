@@ -1,0 +1,48 @@
+{
+  "name": "hmzq",
+  "private": true,
+  "version": "0.8.0-test",
+  "type": "module",
+  "description": "幻梦-星光桌球 - Three.js + Rapier 物理台球（启动器 + 常规/自由模式 + 球体设置 + 音效 + 画质设置 + 网页/移动端）",
+  "main": "electron/main.cjs",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "preview:lan": "vite build --emptyOutDir false && vite preview",
+    "test": "node test/headless.mjs 24 && node test/scene.mjs",
+    "check:syntax": "node test/syntax-floor.mjs",
+    "check:kernel": "node test/kernel-selfcheck.mjs",
+    "check:api": "node test/api-floor.mjs",
+    "check": "npm run check:syntax && npm run check:kernel && npm run check:api",
+    "check:smoke": "node test/browser-smoke.mjs",
+    "check:file": "node test/browser-file.mjs",
+    "check:solo": "node test/browser-solo.mjs",
+    "shots:model": "node scripts/model-shots.mjs",
+    "android:apk": "node scripts/android-apk.mjs",
+    "android:apk:debug": "node scripts/android-apk.mjs debug",
+    "apk:check": "node scripts/check-apk.mjs",
+    "cap:sync": "cap copy android",
+    "sweep": "node test/sweep-break.mjs",
+    "trace": "node test/trace-break.mjs",
+    "build:electron": "vite build --config vite.electron.config.js",
+    "electron:dev": "node scripts/electron-dev.mjs",
+    "electron:start": "npm run build:electron && node scripts/electron-run.mjs",
+    "dist:exe": "npm run build:electron && electron-builder --win --x64",
+    "dist:all": "node scripts/dist-all.mjs"
+  },
+  "dependencies": {
+    "@capacitor/app": "^6.0.3",
+    "@capacitor/core": "^6.2.2",
+    "@dimforge/rapier3d-compat": "^0.20.0",
+    "three": "^0.185.1"
+  },
+  "devDependencies": {
+    "@capacitor/android": "^6.2.2",
+    "@capacitor/cli": "^6.2.2",
+    "acorn": "^8.18.0",
+    "electron": "^44.4.1",
+    "electron-builder": "^26.15.3",
+    "vite": "^8.2.1"
+  }
+}

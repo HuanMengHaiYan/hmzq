@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <!-- viewport-fit=cover：让页面延伸到刘海 / 圆角区，配合 CSS 的 safe-area-inset 避让 -->
+  <meta name="viewport"
+        content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1, user-scalable=no" />
+  <title>幻梦-星光桌球</title>
+  <link rel="stylesheet" href="/src/style.css" />
+  <link rel="stylesheet" href="/src/mobile.css" />
+  <script>
+    // 网页版入口：直接打开站点根路径时先进**启动器**（等价于桌面版启动 exe 看到的界面）。
+    // 带查询参数的不拦 —— 从启动器进来的 ?mode=…&from=launcher、以及 ?ending= 预览，
+    // 都直接进游戏；这样在游戏页按 F5 刷新也不会被弹回主菜单。
+    // Electron 下主进程自己就加载 launcher.html，这里什么都不做。
+    (function () {
+      if (window.__electron) return;
+      if ((location.search || '').length > 1) return;
+      location.replace('launcher.html');
+    })();
+    // 极小兜底：three / rapier 的产物里会引用 globalThis（Chrome 71 才有），更老的内核先补上
+    (function () {
+      if (typeof globalThis === 'undefined') { window.globalThis = window; }
+    })();
+  </script>
+  <script>
+    // ---- 内核能力自检（必须是 ES5 写法：内核再老，这段也要能跑起来，才给得出人话提示）----
+    // 打包产物（dist/）已经降到 ES2019，但手机自带浏览器（MIUI 浏览器 / 老 WebView）可能更老；
+    // 更要紧的是 **dev 模式根本不转译语法**（Vite 自己的 /@vite/client 就是 ES2020，源码也原样下发），
+    // 老内核在 dev 下必然抛 "Uncaught SyntaxError: Unexpected token ."。
+    // 这里提前自检：缺什么、当前跑的是 dev 还是产物、下一步该做什么，一次说清。
+    (function () {
+      // 判断当前页面是 dev（源码直出）还是构建产物：dev 必定注入 /@vite/client。
+      // 报错浮层与提示卡都会带上这一行 —— 手机截图发过来，一眼就知道是不是打开错了地址。
+      window.__runMode = function () {
+        try {
+          var ss = document.getElementsByTagName('script');
+          for (var i = 0; i < ss.length; i++) {
+            if ((ss[i].getAttribute('src') || '').indexOf('@vite/client') >= 0) {
+              return 'dev（源码直出，不转译语法）';
+            }
+          }
+        } catch (e) {}
+        return '构建产物 dist/（已降级 ES2019）';
+      };
+
+      function canRun(src) { try { new Function(src); return true; } catch (e) { return false; } }
+
+      // ---- 第一类：**硬门槛**（产物里真实保留、缺了必白屏）----
+      // 构建目标 es2019，所以 ES2015~ES2018 的语法**原样保留**在这些清单里没有的浏览器上跑不了。
+      var miss = [];
+      if (!canRun('class A {}')) miss.push('class 类');
+      if (!canRun('var f = () => 1')) miss.push('箭头函数');
+      if (!canRun('var s = `t`')) miss.push('模板字符串');
+      if (!canRun('var o = {a:1}, p = {...o}')) miss.push('对象展开');
+      if (!canRun('var [a] = [1]')) miss.push('解构');
+      if (!canRun('for (var x of []) {}')) miss.push('for...of');
+      if (!canRun('async function f(){ await 0 }')) miss.push('async/await');
+      if (typeof WebAssembly !== 'object') miss.push('WebAssembly');
+      if (!window.WebGL2RenderingContext) miss.push('WebGL 2');
+
+      // ---- 第二类：**只在 dev 模式才是门槛** ----
+      // 这四项是 ES2020 / ES2021 / ES2022，在构建产物里已被 esbuild 降级掉
+      //（`npm run check:syntax` 每次构建后校验），所以产物在 Chrome 73+ 都能跑；
+      // 只有 dev 模式源码直出、保留原样时，缺了才会白屏。
+      //
+      // ⚠️ 千万别把它们并进上面的 miss（2026-09-19 踩坑）：
+      //    Android 系统 WebView 实测停在 **Chrome 83**，而逻辑赋值 `||=` 要 Chrome 85+，
+      //    并进去会把**能正常跑**的机器挡在门外 —— 现象就是装了 APK 直接看到这张卡、
+      //    可产物里其实一行 ||= 都没有（`||=` 只存在于这段探针字符串本身）。
+      var devMiss = [];
+      if (!canRun('var o = {}; o?.a')) devMiss.push('可选链 ?.');
+      if (!canRun('var a = null; var b = a ?? 1')) devMiss.push('空值合并 ??');
+      if (!canRun('var a = 0; a ||= 1')) devMiss.push('逻辑赋值 ||=');
+      if (!canRun('class A { #x = 1; get x() { return this.#x } }')) devMiss.push('类私有成员 #');
+
+      var onDev = window.__runMode().indexOf('dev') === 0;
+
+      // ---- WebAssembly 特性自检 ----
+      // 物理引擎 Rapier 的 wasm（实测反编译过）用了三个非 MVP 指令，缺任何一个物理世界都建不起来：
+      //   i32.extend8_s（符号扩展，Chrome 74+）、i32.trunc_sat_f32_s（饱和取整，Chrome 75+）、
+      //   memory.copy（批量内存，Chrome 75+）。这类缺失跟 JS 语法无关，换构建产物也救不了 ——
+      //   只能更新内核。探针是 36~46 字节的极小 wasm 模块，WebAssembly.validate 问一句就知道。
+      var WASM_PROBES = [
+        ['符号扩展 i32.extend8_s（需 Chrome 74+）', 'AGFzbQEAAAABBgFgAX8BfwMCAQAHBQEBZgAACgcBBQAgAMAL'],
+        ['饱和取整 i32.trunc_sat_f32_s（需 Chrome 75+）', 'AGFzbQEAAAABBgFgAX0BfwMCAQAHBQEBZgAACggBBgAgAPwACw=='],
+        ['批量内存 memory.copy（需 Chrome 75+）', 'AGFzbQEAAAABBAFgAAADAgEABQMBAAEHBQEBZgAACg4BDABBAEEAQQD8CgAACw=='],
+      ];
+      var wasmMiss = [];
+      if (typeof WebAssembly === 'object' && typeof WebAssembly.validate === 'function') {
+        for (var wi = 0; wi < WASM_PROBES.length; wi++) {
+          var ok = false;
+          try {
+            var raw = atob(WASM_PROBES[wi][1]);
+            var arr = new Uint8Array(raw.length);
+            for (var bi = 0; bi < raw.length; bi++) arr[bi] = raw.charCodeAt(bi);
+            ok = WebAssembly.validate(arr);
+          } catch (e) { ok = false; }
+          if (!ok) wasmMiss.push(WASM_PROBES[wi][0]);
+        }
+      }
+      // 什么都不缺 —— 放行。
+      // 注意第三项：**产物 + 只缺 dev 语法 = 完全正常**（APK / 手机自带浏览器的常见情形），
+      // 只有 dev 模式缺了这四项才是真的跑不起来。
+      if (!miss.length && !wasmMiss.length && !(onDev && devMiss.length)) return;
+      window.__kernelMissing = miss;
+      window.__devMissing = onDev ? devMiss : [];
+      window.__wasmMissing = wasmMiss;
+
+      function render() {
+        if (window.__kernelBlocked) return;
+        window.__kernelBlocked = true;
+        var ld = document.getElementById('loading');
+        if (ld) ld.style.display = 'none';
+        // 内核对不上时，红框里那两条语法错误没有参考价值，收起来，只留这张卡
+        var er = document.getElementById('err');
+        if (er) er.style.display = 'none';
+        var mode = window.__runMode();
+        var onDev = mode.indexOf('dev') === 0;
+        var jsMiss = (window.__kernelMissing || []).concat(window.__devMissing || []);
+        var wasmMiss = window.__wasmMissing || [];
+
+        // wasm 缺特性是"死结"（换地址/换产物都救不了），所以它优先；否则 dev 模式是最常见原因。
+        var steps = [];
+        if (wasmMiss.length) {
+          // 微信内置浏览器实测能跑（2026-09-18），所以"换个壳打开"排第一 ——
+          // 比让玩家去更新系统 WebView 快得多，也是分享链接最常见的打开方式。
+          steps.push('在右上角菜单里选「<b>在浏览器打开</b>」，用 <b>微信</b> / <b>Chrome</b> / <b>Edge</b> 打开同一个地址（微信内置浏览器已实测可跑）');
+          steps.push('或更新手机里的「<b>Android 系统 WebView</b>」（MIUI 浏览器用的就是它）；更新后要<b>重启浏览器</b>才生效');
+        } else if (onDev) {
+          steps.push('<b>你现在打开的是 dev 地址</b>（<code>npm run dev</code> 的 5183 端口）：dev 模式原样下发源码、不转译语法，老内核打不开是必然的');
+          steps.push('在电脑上改用 <b>npm run preview:lan</b>，然后用手机打开终端里 <b>Network:</b> 那一行（端口 <b>5184</b>）');
+          steps.push('若换成产物仍报错，再更新手机里的「Android 系统 WebView」，或改用 Chrome / Edge 打开');
+        } else {
+          steps.push('更新手机里的「Android 系统 WebView」，或改用 Chrome / Edge 打开同一个地址');
+          steps.push('电脑上调试请用 <b>npm run preview:lan</b>（dev 模式不转译语法，老内核打不开）');
+        }
+
+        var missLine = '';
+        if (jsMiss.length) {
+          missLine += '<b style="color:#ffb27d">' + jsMiss.join(' / ') + '</b>';
+        }
+        if (wasmMiss.length) {
+          missLine += (jsMiss.length ? '<br>' : '') +
+            'WebAssembly：<b style="color:#ffb27d">' + wasmMiss.join(' / ') + '</b>';
+        }
+        var note;
+        if (wasmMiss.length) {
+          note = '这是物理引擎（Rapier）的 wasm 用到的指令，属于浏览器内核能力 —— <b>换地址、换构建产物都解决不了</b>。';
+        } else if (onDev) {
+          note = '构建产物已降级到 ES2019（Chrome 73+ 可跑）；上面这些是 ES2020 / ES2021 语法，只在 dev 模式（源码直出）里才会碰到。';
+        } else {
+          note = '构建产物已降级到 ES2019（Chrome 73+ 可跑），上面这些是它本身就要用的<b>基础</b>语法 —— 内核太旧，换地址救不了，只能升级内核。';
+        }
+
+        // 内核版本一眼可见：本作真实门槛是 Chrome 75（Rapier wasm 的指令要求，见上面的探针），
+        // 光看"缺什么"不直观 —— 带上版本号，手机截图发过来就能直接判断够不够。
+        var kv = /Chrome\/(\d+)/.exec(navigator.userAgent);
+        var kernelLine = kv
+          ? '你的内核 ≈ Chrome ' + kv[1] + ' · 本作要求 ≥ Chrome 75'
+          : '未能从 UA 判断内核版本 · 本作要求 ≥ Chrome 75';
+
+        var box = document.createElement('div');
+        box.setAttribute('style', [
+          'position:fixed', 'left:0', 'right:0', 'top:0', 'bottom:0', 'z-index:99999',
+          'background:#0f1317', 'color:#e8eef5', 'padding:26px 22px 40px', 'overflow:auto',
+          '-webkit-overflow-scrolling:touch',
+          'font:14px/1.75 system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif',
+        ].join(';'));
+        var lis = '';
+        for (var i = 0; i < steps.length; i++) {
+          lis += '<li style="margin:0 0 8px">' + steps[i] + '</li>';
+        }
+        box.innerHTML =
+          '<h2 style="margin:0 0 12px;font-size:19px;font-weight:600">浏览器内核过旧，跑不动这个页面</h2>' +
+          '<p style="margin:0 0 4px;color:#9fb0c0">缺少：' + missLine + '</p>' +
+          '<p style="margin:0 0 18px;color:#7a8b99;font-size:12px">' + note + '</p>' +
+          '<p style="margin:0 0 6px;color:#9fb0c0">下一步：</p>' +
+          '<ol style="margin:0 0 18px;padding-left:20px;color:#cfdce8">' + lis + '</ol>' +
+          '<p style="margin:0 0 4px;color:#7a8b99;font-size:12px">当前打开的是：' + mode + '</p>' +
+          '<p style="margin:0 0 4px;color:#7a8b99;font-size:12px">' + kernelLine + '</p>' +
+          '<p style="margin:0;color:#7a8b99;font-size:12px;word-break:break-all">' +
+          navigator.userAgent + '</p>';
+        document.body.appendChild(box);
+      }
+      if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', render);
+      else render();
+    })();
+  </script>
+  <script>
+    // 运行期错误浮层：WebGL / wasm / 模块加载失败时不再是白屏
+    window.__gameErrors = [];
+    // 自动播放被浏览器策略拦下是**正常现象**（音频要等第一次点击/按键才解锁），
+    // 这类拒绝不该被当成故障弹红框。
+    var BENIGN_ERROR = /NotAllowedError|play\(\) failed|didn't interact with the document/i;
+    window.__showError = function (msg, src) {
+      // 内核过旧时已经给了专门说明，不用再堆红框
+      if (window.__kernelBlocked) return;
+      msg = String(msg == null ? '' : msg);
+      if (BENIGN_ERROR.test(msg)) return;
+      window.__gameErrors.push(msg);
+      var el = document.getElementById('err');
+      if (!el) return;
+      el.style.display = 'block';
+      el.textContent = '运行出错\n' + window.__gameErrors.join('\n');
+
+      var small = function (text, color, more) {
+        var n = document.createElement('small');
+        n.setAttribute('style', 'display:block;margin-top:6px;font-size:10px;line-height:1.6;word-break:break-all;' +
+          'opacity:' + (color ? '1' : '.6') + ';' + (color ? 'color:' + color + ';' : '') + (more || ''));
+        n.textContent = text;
+        el.appendChild(n);
+      };
+
+      // 出错脚本 + 当前模式：手机截图发过来，靠这两项就能判断是「打开错了地址」还是「内核真的不支持」
+      var mode = window.__runMode ? window.__runMode() : '未知';
+      small((src ? '出错脚本：' + src + ' · ' : '') + '模式：' + mode, null);
+      if (mode.indexOf('dev') === 0) {
+        small('这是 dev 模式（源码直出、不转译语法），老内核本来就打不开 —— ' +
+          '请在电脑上跑 npm run preview:lan，再用手机打开终端里 Network: 那行（端口 5184）。', '#ffb27d');
+      }
+      small('UA: ' + navigator.userAgent, null);
+      var ld = document.getElementById('loading');
+      if (ld) ld.classList.add('hide');
+    };
+    window.addEventListener('error', function (e) {
+      var f = (e && e.filename) ? String(e.filename).split('?')[0] : '';
+      var i = f.lastIndexOf('/');
+      window.__showError((e && e.message) || String((e && e.error) || e), i >= 0 ? f.slice(i + 1) : f);
+    });
+    window.addEventListener('unhandledrejection', function (e) {
+      var r = e.reason;
+      window.__showError('Promise: ' + ((r && r.message) || String(r)), '');
+    });
+  </script>
+</head>
+<body>
+  <div id="app"></div>
+
+  <div id="loading">正在装载物理世界…</div>
+  <div id="err"></div>
+
+  <!-- 左下：帮助（问号按钮 → 全屏弹窗） -->
+  <button id="btn-help" class="dock-btn round" title="操作与玩法说明">?</button>
+
+  <!-- 右下：视角回归 / 重开本局 / 设置 -->
+  <div id="dock-right">
+    <button id="btn-reset-view" class="dock-btn warm">↺ 视角回归</button>
+    <button id="btn-restart" class="dock-btn">⟳ 重开本局</button>
+    <button id="btn-settings" class="dock-btn accent">⚙ 设置</button>
+  </div>
+
+  <div id="charge-pop"><i><b id="charge-fill"></b></i><span id="charge-pct">0%</span></div>
+
+  <!-- ---------- 开球键 + 显眼的大蓄力条 ----------
+       桌面 / web 同样要显示（按住蓄力、松手出杆），不只是手机。 -->
+  <div id="shoot-dock">
+    <div id="charge-mobile">
+      <i><b id="charge-mobile-fill"></b></i>
+      <span id="charge-mobile-pct">0%</span>
+    </div>
+    <button id="btn-shoot" type="button">开球</button>
+    <!-- 🤖 人机对战：电脑出杆时把"它打算打哪颗球、多大力度"写在这里（2.4 秒后自己收掉）。
+         绝对定位挂在 dock 上方，跟着 dock 一起挪（双人 / 人机模式 dock 上移时不用重写偏移）。 -->
+    <div id="auto-tip" hidden></div>
+  </div>
+
+  <!-- ---------- 本地双人模式：左右各一个开球键（玩家2 在左、玩家1 在右） ----------
+       两个键同时显示，但只有**当前回合**那一个可按（另一个置灰），
+       这样两个人在同一台机器上不会抢着按错。 -->
+  <div id="duo-dock" hidden>
+    <button id="btn-shoot-2" class="duo-btn p2" type="button" data-player="2">
+      <b>玩家2</b><small>开球</small>
+    </button>
+    <button id="btn-shoot-1" class="duo-btn p1" type="button" data-player="1">
+      <b>玩家1</b><small>开球</small>
+    </button>
+  </div>
+
+  <!-- ---------- 本地双人模式：屏幕顶部的回合提示（醒目） ----------
+       左右两块是双方的球组与剩余球数，中间大字是"现在轮到谁"；
+       下面一行写上一杆发生了什么（换人原因 / 罚球 / 判负）。 -->
+  <div id="turn-banner" hidden>
+    <div class="duo-side" id="duo-side-2">
+      <!-- 人机对战时这一格会改成「电脑」（见 duo-ui.js） -->
+      <span class="duo-name" id="duo-name-2">玩家2</span>
+      <span class="duo-group" id="duo-group-2">未分组</span>
+      <span class="duo-left" id="duo-left-2">剩 7</span>
+    </div>
+    <div class="turn-mid">
+      <span class="turn-who" id="turn-who">玩家1</span>
+      <span class="turn-go" id="turn-go">轮到你击球</span>
+      <span class="turn-note" id="turn-note"></span>
+    </div>
+    <div class="duo-side" id="duo-side-1">
+      <span class="duo-name" id="duo-name-1">玩家1</span>
+      <span class="duo-group" id="duo-group-1">未分组</span>
+      <span class="duo-left" id="duo-left-1">剩 7</span>
+    </div>
+  </div>
+
+  <!-- ---------- 自由球模式：摆放白球（拖动 → 确定 → 才进入瞄准） ----------
+       每一杆开球前都会出现（由 main.js 取消 hidden）。
+       摆球期间相机**照常可用**：鼠标右键拖动 / 滚轮缩放照旧，手机上单指拖白球、双指转视角+缩放。
+       （曾经错用 rig.lockAim() 把相机整个关掉，右键转视角与滚轮缩放全废 —— 见 camera-rig.js 的 setPlacing） -->
+  <div id="place-bar" hidden>
+    <p class="place-tip">拖动白球到你想要的位置，然后点「确定」开始</p>
+    <button id="place-ok" type="button">确 定</button>
+  </div>
+
+  <!-- ---------- 操作设置 ---------- -->
+  <div id="settings-modal">
+    <div class="settings-card">
+      <!-- 主菜单入口：只在从启动器进入时出现（由 settings.js 取消 hidden） -->
+      <button id="btn-menu" class="menu-back" hidden>☰ 主菜单</button>
+
+      <h2>操作设置</h2>
+
+      <div class="settings-row">
+        <label>操作模式</label>
+        <div class="mode-grid">
+          <button data-mode="free">自由</button>
+          <button data-mode="tracking">追踪</button>
+          <button data-mode="top">顶视</button>
+        </div>
+        <p class="lock-note" id="set-lock-note" hidden>操作模式已由启动器锁定，游戏中不可切换</p>
+      </div>
+
+      <div class="settings-row">
+        <label>最小力度（轻推）</label>
+        <div class="slider-row">
+          <input type="range" id="set-min" min="0.05" max="1.00" step="0.01" value="0.05" />
+          <span class="slider-val" id="set-min-val">0.05</span>
+        </div>
+      </div>
+
+      <div class="settings-row">
+        <label>最大力度（硬杆）</label>
+        <div class="slider-row">
+          <input type="range" id="set-max" min="0.10" max="1.50" step="0.01" value="1.20" />
+          <span class="slider-val" id="set-max-val">1.20</span>
+        </div>
+      </div>
+
+      <div class="settings-row">
+        <label>非己方球半透明</label>
+        <div class="mode-grid" id="set-ghost">
+          <button data-ghost="on">开启</button>
+          <button data-ghost="off">关闭</button>
+        </div>
+        <p class="hint">只在<b>本地双人 / 人机对战</b>里生效：轮到你时，不是你那组（或现在还不能打）的球淡下去，
+          一眼分得出该打哪颗。关掉则全程实色。</p>
+      </div>
+
+      <div class="settings-row">
+        <label>音效音量</label>
+        <div class="slider-row">
+          <input type="range" id="set-sfx" min="0" max="100" step="1" value="85" />
+          <span class="slider-val" id="set-sfx-val">85</span>
+        </div>
+        <p class="hint">撞球、撞库、落袋与连击语音。0 = 完全静音。</p>
+      </div>
+
+      <div class="settings-row">
+        <label>背景音乐</label>
+        <div class="slider-row">
+          <input type="range" id="set-music" min="0" max="100" step="1" value="40" />
+          <span class="slider-val" id="set-music-val">40</span>
+        </div>
+        <div class="mode-grid" id="set-bgm">
+          <button data-bgm="lounge">爵士酒廊</button>
+          <button data-bgm="park">公园爵士</button>
+          <button data-bgm="off">关闭</button>
+        </div>
+      </div>
+
+      <!-- 画质：选项表在 src/quality.js，DOM 由 src/quality-ui.js 生成 -->
+      <h3 class="settings-sub">画质</h3>
+      <div id="quality-rows"></div>
+      <p class="card-note" id="q-now"></p>
+      <p class="card-note">选一档即可；想自己抠细节就选「自定义」，下面会展开阴影精度 / 渲染分辨率 / 贴图精度 / 纹理细节。上面那行是当前实际取值。</p>
+
+      <p class="card-note" id="set-ballset">玩法规则：中式黑八 · 在启动器的「游戏设置 → 规则设置」里更改</p>
+
+      <button class="settings-close" id="settings-close">完 成</button>
+    </div>
+
+    <!-- 放弃本局确认（叠在设置弹窗之上） -->
+    <div id="confirm-menu">
+      <div class="confirm-card">
+        <h3>返回主菜单</h3>
+        <p>本局进度（球位、击球次数、已进袋的球）不会保存，确定要放弃本局游戏吗？</p>
+        <div class="confirm-actions">
+          <button id="confirm-cancel" class="ghost">继续本局</button>
+          <button id="confirm-ok" class="danger">放弃并返回</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ---------- 通用确认弹窗（"重开本局"这类会丢进度的操作先问一句） ----------
+       注意与上面设置面板里的 #confirm-menu（返回主菜单确认）是两套 DOM：
+       那个只在设置面板里用，这个是全局的，id 故意错开。 -->
+  <div id="ask-modal">
+    <div class="confirm-card">
+      <h3 id="ask-title">重开本局？</h3>
+      <p id="ask-sub"></p>
+      <div class="confirm-actions">
+        <button id="ask-cancel" class="ghost">取消</button>
+        <button id="ask-ok" class="danger">确定</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ---------- 结算（胜利 / 失败 / 黑 8 自爆；失败两种为备用） ---------- -->
+  <div id="result-modal">
+    <div class="result-card">
+      <div class="result-tag" id="result-tag">VICTORY</div>
+      <h2 id="result-title">清 台 ！</h2>
+      <p id="result-sub">全部目标球入袋。</p>
+      <div class="result-stats" id="result-stats"></div>
+      <div class="result-actions">
+        <button id="result-again" class="primary">再来一局</button>
+        <button id="result-menu" class="ghost">返回主菜单</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ---------- 帮助（全屏弹窗，内容由 src/help.js 填充） ---------- -->
+  <div id="help-modal">
+    <div class="help-sheet">
+      <header class="help-head">
+        <h2>帮助</h2>
+        <button id="help-close" title="关闭">✕</button>
+      </header>
+      <div class="help-body" id="help-body"></div>
+    </div>
+  </div>
+
+  <!-- 左上角信息栏与右侧已进袋：右上角的小按钮收起 / 展开（见 hud.js 的 #wireFold）。
+       收起时：信息栏只留标题（模式名），进袋栏只留最后一颗进球；一格球都没进时显示透明占位格。 -->
+  <div id="panel-info" class="hud">
+    <div class="title">幻梦-星光桌球 <span id="v-mode">PHASE 2</span>
+      <button class="fold-btn" id="info-toggle" type="button" title="收起面板">收起</button>
+    </div>
+    <div class="row"><span class="k">状态</span><span class="v state-ready" id="v-state">就绪</span></div>
+    <div class="row"><span class="k">本次力度</span><span class="v" id="v-power">-</span></div>
+    <div class="row"><span class="k">击球次数</span><span class="v" id="v-shots">0</span></div>
+    <!-- 单人模式才出现的三行（按模式互斥显示，由 hud.js 的 #renderMode 控制显隐）：
+         计分模式 → 得分；限次模式 → 剩余次数；计时模式 → 剩余时间 -->
+    <div class="row" id="row-score" hidden><span class="k">得分</span><span class="v" id="v-score">0</span></div>
+    <div class="row" id="row-left" hidden><span class="k">剩余次数</span><span class="v" id="v-left">–</span></div>
+    <div class="row" id="row-time" hidden><span class="k">剩余时间</span><span class="v" id="v-time">–</span></div>
+    <div class="row"><span class="k">运动中球数</span><span class="v" id="v-moving">0</span></div>
+    <div class="row"><span class="k">帧率</span><span class="v" id="v-fps">–</span></div>
+    <div class="bar"><i id="bar-power"></i></div>
+  </div>
+
+  <!-- 已进袋：单人一栏（总数 + 球号），本地双人两栏（各人自己打进的球，见 hud.js）。
+       `.chip-empty` 是收起状态下的占位格：那一栏一个球都没进时顶一颗透明的，
+       免得面板塌成一行、跟着上下跳（显隐由 CSS 的 `:empty +` 判，不劳 JS）。 -->
+  <div id="panel-pot" class="hud">
+    <div class="pot-top">
+      <button class="fold-btn" id="pot-toggle" type="button" title="收起面板">收起</button>
+    </div>
+    <div id="potted-solo">
+      <div class="row"><span class="k">已进袋</span><span class="v" id="v-potted">0 / 15</span></div>
+      <div id="potted-list"></div>
+      <div class="chip-empty" aria-hidden="true"></div>
+    </div>
+    <div id="potted-duo" hidden>
+      <div class="pot-side">
+        <div class="row"><span class="k">玩家1 已进袋</span><span class="v" id="v-potted-1">0</span></div>
+        <div id="potted-list-1"></div>
+        <div class="chip-empty" aria-hidden="true"></div>
+      </div>
+      <div class="pot-side">
+        <div class="row"><span class="k">玩家2 已进袋</span><span class="v" id="v-potted-2">0</span></div>
+        <div id="potted-list-2"></div>
+        <div class="chip-empty" aria-hidden="true"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 挑战历史：与启动器共用同一份实现（public/ 下原样下发，不进打包器） -->
+  <script src="history.js"></script>
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>

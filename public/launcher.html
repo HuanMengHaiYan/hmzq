@@ -1,0 +1,749 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <!-- viewport-fit=cover：网页版在手机上打开时，页面延伸到刘海 / 圆角区（配合 CSS 的 safe-area） -->
+  <meta name="viewport"
+        content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1, user-scalable=no" />
+  <title>幻梦-星光桌球</title>
+  <!--
+    启动器（进入游戏前的主菜单）
+    ------------------------------------------------------------------
+    为什么不放进 src/ 交给 vite 打包：启动器只需要「背景图 + 几个按钮」，
+    没有任何 three/rapier 依赖，也不需要打包器帮忙。放进 public/ 的收益是
+      · vite build 原样拷贝到 dist/ 与 dist-electron/，浏览器与 Electron 共用同一份
+      · 生成的是经典脚本，file:// 下不踩 ES module 的 CORS 坑（详见 vite.electron.config.js）
+    代价是它不能 import src/ 里的模块（否则会和游戏入口产生共享 chunk，破坏 IIFE 构建），
+    因此设置项的读写在这里用十几行原生代码实现，key 与默认值必须和 src/prefs.js 保持一致，
+    球组列表也必须和 src/rules.js 保持一致。
+  -->
+  <link rel="stylesheet" href="launcher.css" />
+  <script>
+    // 与游戏页一致：运行期错误不要变成白屏
+    window.__gameErrors = [];
+    window.addEventListener('error', function (e) {
+      window.__gameErrors.push(e.message || String(e.error || e));
+    });
+    window.addEventListener('unhandledrejection', function (e) {
+      var r = e.reason;
+      window.__gameErrors.push('Promise: ' + ((r && r.message) || String(r)));
+    });
+  </script>
+</head>
+<body>
+  <!-- 背景：游戏实机截图 + 毛玻璃（恒定模糊）+ 缓慢左右循环平移 -->
+  <div class="bg" aria-hidden="true">
+    <img class="bg-img" src="bg/launcher.png" alt="" draggable="false" />
+    <div class="bg-veil"></div>
+  </div>
+
+  <div class="shell">
+    <!-- ---------------- 左侧菜单栏 ---------------- -->
+    <aside class="side">
+      <div class="brand">
+        <h1>幻梦-星光桌球</h1>
+        <p class="sub">HUANMENG&nbsp;STARLIGHT&nbsp;POOL</p>
+        <p class="ver" id="ver">自由练习版</p>
+      </div>
+
+      <!--
+        一级菜单：每一项对应一条一级路由（data-go = 路由名）。
+        二级 / 三级路由挂在各自的 section[data-page] 上，靠 data-parent 串成面包屑，
+        详见 launcher.js 的 go() —— 菜单里只放一级，不为每个子页面都塞一个入口。
+      -->
+      <nav class="menu" id="menu">
+        <button class="mi on" type="button" data-go="start">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8.6 5.4v13.2L19.4 12z" fill="currentColor" stroke="none"/></svg>
+          <span>常规模式</span><i class="arrow">›</i>
+        </button>
+        <button class="mi" type="button" data-go="fun">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.6l2 5.2 5.2 2-5.2 2-2 5.2-2-5.2-5.2-2 5.2-2z"/><circle cx="18.6" cy="5.4" r="1.3" fill="currentColor" stroke="none"/></svg>
+          <span>娱乐模式</span><i class="arrow">›</i>
+        </button>
+        <button class="mi" type="button" data-go="history">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.4"/><path d="M12 7.4V12l3.2 2"/></svg>
+          <span>挑战历史</span><i class="arrow">›</i>
+        </button>
+        <button class="mi" type="button" data-go="settings">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 8h15M4.5 16h15"/><circle cx="9.5" cy="8" r="2.4"/><circle cx="14.5" cy="16" r="2.4"/></svg>
+          <span>游戏设置</span><i class="arrow">›</i>
+        </button>
+        <button class="mi" type="button" data-go="help">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.6"/><path d="M9.7 9.6a2.4 2.4 0 1 1 3.3 2.3c-.7.3-.9.7-.9 1.4v.4"/><circle cx="12.05" cy="16.5" r=".95" fill="currentColor" stroke="none"/></svg>
+          <span>帮助</span><i class="arrow">›</i>
+        </button>
+        <button class="mi" type="button" data-go="about">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.6"/><path d="M12 10.9v5.4"/><circle cx="12" cy="8.1" r="1" fill="currentColor" stroke="none"/></svg>
+          <span>关于</span><i class="arrow">›</i>
+        </button>
+        <button class="mi danger" type="button" data-go="quit">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.6v7.6"/><path d="M7.4 6.4a7.6 7.6 0 1 0 9.2 0"/></svg>
+          <span>退出游戏</span><i class="arrow">›</i>
+        </button>
+      </nav>
+
+      <div class="foot">
+        <span><kbd>↑</kbd><kbd>↓</kbd> 选择 · <kbd>Enter</kbd> 确定 · <kbd>Esc</kbd> 返回</span>
+      </div>
+    </aside>
+
+    <!-- ---------------- 右侧内容区 ---------------- -->
+    <main class="stage" id="stage">
+      <!--
+        手机（窄屏）是二级页面结构：
+          一级 = 左侧那份菜单（变成整屏竖向列表，见 launcher.css 的窄屏断点）
+          二级 = 这里的内容页，靠这个返回键回一级
+        桌面端这个按钮恒为 display:none（左右两栏同屏显示，不存在"返回"）。
+      -->
+      <!--
+        返回键：文案由 launcher.js 按当前所在的子路由改。
+        （竖屏才显示 —— 桌面左右两栏同屏，顶上的面包屑 .crumb 已经够用）
+      -->
+      <button class="back" type="button" id="back">
+        <span class="chev" aria-hidden="true">‹</span><span id="back-txt">主菜单</span>
+      </button>
+
+      <!--
+        常规模式（一级）· 卡片上的 data-go 指向二级路由。
+        为什么不就地展开：以前「单人模式 → 限次 → 三个难度」三段都摊在同一屏里，
+        玩法再多几个（本地双人 / 联机 / 人机）就会叠成一堵墙。现在每一层都是独立子路由，
+        一层只做一件事：选玩法 → 选难度 → 进球台。
+      -->
+      <section class="page on" data-page="start">
+        <header class="ph">
+          <h2>常规模式</h2>
+          <p>先选玩法，需要难度的再选难度，然后进入球台</p>
+        </header>
+
+        <div class="cards">
+          <button class="card live" type="button" data-go="start/solo">
+            <span class="tag live">可进入</span><span class="idx">A</span>
+            <h3>单人模式</h3>
+            <p>计分 / 限次 / 计时三种玩法，成绩会记进挑战历史</p>
+            <span class="go">选择玩法 →</span>
+          </button>
+
+          <button class="card live" type="button" data-enter-game="free">
+            <span class="tag live">可进入</span><span class="idx">B</span>
+            <h3>自由模式</h3>
+            <p>纯粹游玩：自由练习、无计分、无胜负判定</p>
+            <span class="go">进入球台 →</span>
+          </button>
+
+          <button class="card live" type="button" data-enter-game="duo">
+            <span class="tag live">可进入</span><span class="idx">C</span>
+            <h3>本地双人模式</h3>
+            <p>同一台机器轮流击球：1~7 小号 / 9~15 大号，先清完自己那组再打进 8 号者获胜</p>
+            <span class="go">进入球台 →</span>
+          </button>
+
+          <button class="card" type="button" data-soon="在线联机大厅">
+            <span class="tag">后续开发</span><span class="idx">D</span>
+            <h3>在线联机大厅</h3>
+            <p>匹配对手、房间与回合同步，需要服务器支持</p>
+          </button>
+
+          <button class="card live" type="button" data-go="start/ai">
+            <span class="tag live">可进入</span><span class="idx">E</span>
+            <h3>人机对战</h3>
+            <p>与电脑对手对局 · 中式黑八 · 选择难度</p>
+            <span class="go">选择难度 →</span>
+          </button>
+        </div>
+
+        <p class="note">
+          当前可进入 <b>自由模式</b>、<b>单人模式（计分 / 限次 / 计时）</b>、<b>本地双人模式</b>
+          与 <b>人机对战</b>；在线联机将在后续阶段开发。
+          双人 / 人机模式是<b>轮流击球</b>：屏幕顶部会大字提示轮到谁，玩家 1 用右边的开球键、
+          玩家 2 用左边的（人机模式下左边那颗是电脑自己打，永远置灰），
+          规则细节在「游戏设置 → 规则设置」里改。
+          游戏内右下角有 <b>⟳ 重开本局</b>（会先问一句，中途重开的那局不记入历史）；
+          打完的每一局都会记进 <b>挑战历史</b>。
+        </p>
+      </section>
+
+      <!-- 单人模式（二级）：选玩法 -->
+      <section class="page" data-page="start/solo" data-parent="start">
+        <header class="ph">
+          <h2>单人模式</h2>
+          <p>选一种玩法 —— 限次与计时还要再选难度</p>
+        </header>
+        <nav class="crumb"><button type="button" data-up>‹ 常规模式</button></nav>
+
+        <div class="sub-grid">
+          <button class="chip-btn" type="button" data-enter-game="score">
+            <b>计分模式</b><i>连击与一杆多进加分，清台结算</i>
+          </button>
+          <button class="chip-btn" type="button" data-go="start/solo/limit">
+            <b>限次模式</b><i>限定次数内清台 · 去选难度 →</i>
+          </button>
+          <button class="chip-btn" type="button" data-go="start/solo/timed">
+            <b>计时模式</b><i>限定时间内清台 · 去选难度 →</i>
+          </button>
+        </div>
+      </section>
+
+      <!-- 限次难度（三级）-->
+      <section class="page" data-page="start/solo/limit" data-parent="start/solo">
+        <header class="ph">
+          <h2>限次模式 · 选择难度</h2>
+          <p>难度只决定给多少次出杆机会</p>
+        </header>
+        <nav class="crumb"><button type="button" data-up>‹ 单人模式</button></nav>
+
+        <div class="sub-grid">
+          <button class="chip-btn" type="button" data-enter-game="limit" data-diff="easy">
+            <b>简单</b><i>40 次机会</i>
+          </button>
+          <button class="chip-btn" type="button" data-enter-game="limit" data-diff="normal">
+            <b>中等</b><i>30 次机会</i>
+          </button>
+          <button class="chip-btn" type="button" data-enter-game="limit" data-diff="hard">
+            <b>困难</b><i>20 次机会</i>
+          </button>
+        </div>
+      </section>
+
+      <!-- 计时难度（三级）-->
+      <section class="page" data-page="start/solo/timed" data-parent="start/solo">
+        <header class="ph">
+          <h2>计时模式 · 选择难度</h2>
+          <p>难度只决定给多长时间</p>
+        </header>
+        <nav class="crumb"><button type="button" data-up>‹ 单人模式</button></nav>
+
+        <div class="sub-grid">
+          <button class="chip-btn" type="button" data-enter-game="timed" data-diff="easy">
+            <b>简单</b><i>10 分钟</i>
+          </button>
+          <button class="chip-btn" type="button" data-enter-game="timed" data-diff="normal">
+            <b>中等</b><i>6 分钟</i>
+          </button>
+          <button class="chip-btn" type="button" data-enter-game="timed" data-diff="hard">
+            <b>困难</b><i>3 分钟</i>
+          </button>
+        </div>
+      </section>
+
+      <!-- 人机对战难度（二级）：只有一种玩法，所以这层直接就是难度页 -->
+      <section class="page" data-page="start/ai" data-parent="start">
+        <header class="ph">
+          <h2>人机对战 · 选择难度</h2>
+          <p>中式黑八规则 · 你打玩家1，电脑扮演玩家2，轮到它时自己瞄准出杆</p>
+        </header>
+        <nav class="crumb"><button type="button" data-up>‹ 常规模式</button></nav>
+
+        <div class="sub-grid">
+          <button class="chip-btn" type="button" data-enter-game="ai" data-diff="easy">
+            <b>简单</b><i>对手失误多（进球率约 30%）· 适合熟悉操作</i>
+          </button>
+          <button class="chip-btn" type="button" data-enter-game="ai" data-diff="normal">
+            <b>中等</b><i>会打，但失误不少（约 45%）</i>
+          </button>
+          <button class="chip-btn" type="button" data-enter-game="ai" data-diff="hard">
+            <b>困难</b><i>准度高，长台与薄球偶尔失手（约 70%）</i>
+          </button>
+          <button class="chip-btn" type="button" data-enter-game="ai" data-diff="extreme">
+            <b>极难</b><i>几乎不失误，长台薄球也照进（约 90%）</i>
+          </button>
+        </div>
+
+        <p class="note">
+          四档难度只是<b>电脑的手抖程度</b>不同：球桌、球、出杆链路与你自己打的时候完全一致，
+          电脑不占任何物理上的便宜。进球率是 <b>用真实物理跑几百杆量出来的</b>，
+          觉得对手太强或太弱都好调（改 <b>AI_LEVELS</b> 的抖动值即可）。
+          无论输赢都会记进 <b>挑战历史</b>，历史页能看出你对电脑的胜负战绩。
+        </p>
+      </section>
+
+      <!-- ---------------- 娱乐模式（一级） ---------------- -->
+      <section class="page" data-page="fun">
+        <header class="ph">
+          <h2>娱乐模式</h2>
+          <p>常规之外的花式玩法，记录单独收进挑战历史的「娱乐」标签</p>
+        </header>
+
+        <div class="cards">
+          <button class="card live" type="button" data-go="fun/freeball">
+            <span class="tag live">可进入</span><span class="idx">A</span>
+            <h3>自由球模式</h3>
+            <p>开杆前自己把白球摆到顺手的位置 · 按计分口径算分</p>
+            <span class="go">查看玩法 →</span>
+          </button>
+
+          <button class="card" type="button" data-soon="娱乐模式 · 花式玩法">
+            <span class="tag">敬请期待</span><span class="idx">B</span>
+            <h3>花式玩法</h3>
+            <p>规则之外的趣味打法</p>
+          </button>
+          <button class="card" type="button" data-soon="娱乐模式 · 限时挑战">
+            <span class="tag">敬请期待</span><span class="idx">C</span>
+            <h3>限时挑战</h3>
+            <p>抢时间的短局玩法</p>
+          </button>
+          <button class="card" type="button" data-soon="娱乐模式 · 街机闯关">
+            <span class="tag">敬请期待</span><span class="idx">D</span>
+            <h3>街机闯关</h3>
+            <p>一关比一关难</p>
+          </button>
+        </div>
+
+        <p class="note">
+          娱乐模式不参与常规排行的分组：它的每一局照样记进 <b>挑战历史</b>，
+          只是单独放在 <b>娱乐</b> 标签里 —— 以后再加新玩法不用往菜单位置里挤。
+        </p>
+      </section>
+
+      <!-- 自由球模式（二级）：玩法说明 + 进入 -->
+      <section class="page" data-page="fun/freeball" data-parent="fun">
+        <header class="ph">
+          <h2>自由球模式</h2>
+          <p>每一杆开球前，都先把白球摆到你想要的位置</p>
+        </header>
+        <nav class="crumb"><button type="button" data-up>‹ 娱乐模式</button></nav>
+
+        <h3 class="sh">怎么玩</h3>
+        <ul class="help">
+          <li><b>每一杆开球前</b>都会先进入 <b>摆放白球</b> 阶段：拖着白球挪到任意顺手的位置，
+            不用被上一杆的走位结果绑住 —— 想打哪就先把白球摆到哪，开挂般的练习手感</li>
+          <li>位置不能压在<b>袋口</b>上，也不能嵌进<b>库边</b>里 —— 拖到不合法的位置时它会自动停在合法处</li>
+          <li>摆好后点<b>确定</b>，才进入瞄准阶段；此前按不出杆</li>
+          <li><b>摆球的同时照样能转视角、缩放</b>：鼠标右键拖动 / 滚轮，手机上用<b>双指</b>
+            （单指留给拖白球）</li>
+          <li>计分口径与<b>计分模式</b>完全一致：进一颗 +1、连进递增、一杆多进额外加分、白球落袋 −1</li>
+        </ul>
+        <p class="note">没有次数与时限，桌面上的球打完（清台）就算通关。</p>
+
+        <div class="actions">
+          <button class="primary" type="button" data-enter-game="freeball">进入球台 →</button>
+        </div>
+      </section>
+
+      <!-- 挑战历史 -->
+      <section class="page" data-page="history">
+        <header class="ph">
+          <h2>挑战历史</h2>
+          <p>每一局的用时与成绩，按玩法分组</p>
+        </header>
+
+        <div class="hist-tabs" id="hist-tabs"></div>
+        <div class="hist-list" id="hist-list"></div>
+
+        <div class="actions">
+          <button class="ghost" type="button" id="hist-clear">初始化</button>
+          <span class="saved" id="hist-saved">已清空</span>
+        </div>
+
+        <p class="note">
+          <b>初始化</b>只清空当前标签下的记录：在「计分」里点就只清计分模式，在「所有」里点是全部清空。
+          记录最多保留 <b>200</b> 条（超出丢最旧的），只存本机。
+          点任意一条可以看<b>这一局的完整数据</b>（进球率、平均瞄准时间、视角模式等）。
+        </p>
+      </section>
+
+      <!--
+        游戏设置（一级）· 只放四个分类入口，二级由它决定。
+        规则设置原先是一级菜单项，现在收进这里 —— 四个类目都是"设置"，
+        分成四个平级菜单项会让侧栏越来越长，而它们实际要用的时候都是"先进设置再挑"。
+      -->
+      <section class="page" data-page="settings">
+        <header class="ph">
+          <h2>游戏设置</h2>
+          <p>四类设置分门别类，改动即时保存，进入游戏后依然生效</p>
+        </header>
+
+        <div class="cards">
+          <button class="card live" type="button" data-go="settings/game">
+            <span class="tag live">可进入</span>
+            <h3>游戏设置</h3>
+            <p>玩家名称、最小 / 最大力度、操作模式</p>
+            <span class="go">进入 →</span>
+          </button>
+
+          <button class="card live" type="button" data-go="settings/audio">
+            <span class="tag live">可进入</span>
+            <h3>声音设置</h3>
+            <p>音效与背景音乐音量、曲目选择</p>
+            <span class="go">进入 →</span>
+          </button>
+
+          <button class="card live" type="button" data-go="settings/quality">
+            <span class="tag live">可进入</span>
+            <h3>画质设置</h3>
+            <p>按机器性能挑一档：自动 / 低 / 中 / 高</p>
+            <span class="go">进入 →</span>
+          </button>
+
+          <button class="card live" type="button" data-go="settings/rules">
+            <span class="tag live">可进入</span>
+            <h3>规则设置</h3>
+            <p>玩法规则：桌面上的球有哪些、怎么摆</p>
+            <span class="go">进入 →</span>
+          </button>
+        </div>
+
+        <div class="actions">
+          <button class="ghost" type="button" id="p-reset">恢复默认</button>
+          <span class="saved" id="p-saved">已保存</span>
+        </div>
+
+        <p class="note">
+          四类设置与游戏内「⚙ 设置」共享同一份存档，两边改动互相同步。
+          以后再加新的设置分类，只要在这里加一张卡 + 一个二级页，不用动菜单。
+        </p>
+      </section>
+
+      <!-- 游戏设置（二级）：本来就在这一页的内容 -->
+      <section class="page" data-page="settings/game" data-parent="settings">
+        <header class="ph">
+          <h2>游戏设置</h2>
+          <p>改动即时保存，进入游戏后依然生效（游戏内也可以再调整）</p>
+        </header>
+        <nav class="crumb"><button type="button" data-up>‹ 设置</button></nav>
+
+        <div class="field">
+          <div class="fl"><label for="p-name">玩家名称</label></div>
+          <input type="text" id="p-name" class="text-in" maxlength="12" placeholder="玩家1" />
+          <p class="hint">显示在挑战历史里，最长 12 个字。不填就是「玩家1」。</p>
+        </div>
+
+        <div class="field">
+          <div class="fl"><label for="p-min">最小力度（轻推）</label><b id="p-min-v">0.05</b></div>
+          <input type="range" id="p-min" min="0.05" max="1.00" step="0.01" value="0.05" />
+          <p class="hint">蓄力条刚起步就松手时的力度。数值越大，最轻的一杆也越有力。</p>
+        </div>
+
+        <div class="field">
+          <div class="fl"><label for="p-max">最大力度（硬杆）</label><b id="p-max-v">1.20</b></div>
+          <input type="range" id="p-max" min="0.10" max="1.50" step="0.01" value="1.20" />
+          <p class="hint">蓄满力时的力度。开球与大力炸球都靠它。</p>
+        </div>
+
+        <div class="field">
+          <div class="fl">
+            <label>操作模式</label>
+            <span class="lock">进入游戏后锁定，不可切换</span>
+          </div>
+          <div class="segs" id="p-mode">
+            <button type="button" data-mode="free">自由</button>
+            <button type="button" data-mode="tracking">追踪</button>
+            <button type="button" data-mode="top">顶视</button>
+          </div>
+          <p class="hint" id="p-mode-hint">追踪：视角自动对焦到白球后方，瞄准方向跟随相机。</p>
+        </div>
+
+        <div class="actions">
+          <span class="saved" id="saved-game">已保存</span>
+        </div>
+      </section>
+
+      <!-- 声音设置（二级）· 面板实现在 public/launcher-audio.js -->
+      <section class="page" data-page="settings/audio" data-parent="settings">
+        <header class="ph">
+          <h2>声音设置</h2>
+          <p>与游戏内「⚙ 设置」是同一份，两边改动互相同步</p>
+        </header>
+        <nav class="crumb"><button type="button" data-up>‹ 设置</button></nav>
+
+        <div class="field">
+          <div class="fl"><label for="p-sfx">音效音量</label><b id="p-sfx-v">85</b></div>
+          <input type="range" id="p-sfx" min="0" max="100" step="1" value="85" />
+          <p class="hint">球撞球、出杆、落袋与连击语音的音量。0 = 完全静音。</p>
+        </div>
+
+        <div class="field">
+          <div class="fl"><label for="p-music">背景音乐音量</label><b id="p-music-v">40</b></div>
+          <input type="range" id="p-music" min="0" max="100" step="1" value="40" />
+          <p class="hint">BGM 是陪衬，建议低于音效音量。</p>
+        </div>
+
+        <div class="field">
+          <div class="fl"><label>背景音乐曲目</label></div>
+          <div class="segs" id="p-bgm">
+            <button type="button" data-bgm="lounge">爵士酒廊</button>
+            <button type="button" data-bgm="park">公园爵士</button>
+            <button type="button" data-bgm="off">关闭</button>
+          </div>
+          <p class="hint" id="p-bgm-hint">两首都来自维基共享资源，可自由使用（授权见「关于」）。</p>
+        </div>
+
+        <div class="actions">
+          <span class="saved" id="saved-audio">已保存</span>
+        </div>
+      </section>
+
+      <!-- 画质设置（二级）· 面板实现在 public/launcher-quality.js -->
+      <section class="page" data-page="settings/quality" data-parent="settings">
+        <header class="ph">
+          <h2>画质设置</h2>
+          <p>阴影、分辨率、贴图与纹理不再单独调，按档位一次到位</p>
+        </header>
+        <nav class="crumb"><button type="button" data-up>‹ 设置</button></nav>
+
+        <!--
+          这里不写行标题：画质面板（public/launcher-quality.js）自己会渲染「画质档位」那一行。
+          两边都写就会在页面上出现两遍同样的标题 —— 属性断言看不出来，只有截图能发现。
+        -->
+        <div id="p-quality"></div>
+        <p class="hint" id="p-quality-now"></p>
+        <p class="hint">
+          进游戏后也能在「⚙ 设置」里改。阴影、分辨率与<b>桌面贴图</b>是最吃性能的几项：手机（红米 K30 一档）建议留在
+          <b>自动</b>或<b>中</b>，卡顿就选<b>低</b>；想自己抠细节就选<b>自定义</b>，
+          下面会展开阴影精度 / 渲染分辨率 / 贴图精度 / 纹理细节四项。左上角面板里的「帧率」就是实机读数。
+        </p>
+
+        <div class="actions">
+          <span class="saved" id="saved-quality">已保存</span>
+        </div>
+      </section>
+
+      <!-- 规则设置（二级）：0.7.0 起分成"单人 / 双人"两个三级页（体检 G4） -->
+      <section class="page" data-page="settings/rules" data-parent="settings">
+        <header class="ph">
+          <h2>规则设置</h2>
+          <p>按玩法分开：一个人打的一套，双人对战的一套</p>
+        </header>
+        <nav class="crumb"><button type="button" data-up>‹ 设置</button></nav>
+
+        <div class="cards">
+          <button class="card live" type="button" data-go="settings/rules/solo">
+            <span class="tag live">可进入</span>
+            <h3>单人模式规则</h3>
+            <p>玩法规则：桌面上的球有哪些、怎么摆（自由 / 计分 / 限次 / 计时共用）</p>
+            <span class="go">进入 →</span>
+          </button>
+
+          <button class="card live" type="button" data-go="settings/rules/duo">
+            <span class="tag live">可进入</span>
+            <h3>双人对战规则</h3>
+            <p>本地双人与人机对战：分组、黑八处置、白球落袋与犯规罚则</p>
+            <span class="go">进入 →</span>
+          </button>
+        </div>
+
+        <p class="note">
+          单人规则影响所有一个人打的玩法；双人规则只在「本地双人」与「人机对战」里生效。
+          <b>犯规罚则默认全部关闭</b> —— 犯规只换人，想要真实规则的"手中球"判罚再到双人对战规则里开。
+        </p>
+      </section>
+
+      <!-- 单人模式规则（三级）：球体设置从原规则页搬到这里 -->
+      <section class="page" data-page="settings/rules/solo" data-parent="settings/rules">
+        <header class="ph">
+          <h2>单人模式规则</h2>
+          <p>决定球桌上玩的是哪一种台球（自由 / 计分 / 限次 / 计时共用）</p>
+        </header>
+        <nav class="crumb"><button type="button" data-up>‹ 规则设置</button></nav>
+
+        <div class="field">
+          <div class="fl">
+            <label>玩法规则</label>
+            <span class="lock">决定桌面上有哪些球、怎么摆</span>
+          </div>
+          <!-- 可选项由 launcher.js 按 BALL_SETS 生成；未开发的玩法渲染成禁用按钮 -->
+          <div class="segs" id="p-balls"></div>
+          <p class="hint" id="p-balls-hint"></p>
+        </div>
+
+        <ul class="help" id="p-balls-meta"></ul>
+
+        <div class="actions">
+          <span class="saved" id="p-balls-saved">已保存</span>
+        </div>
+
+        <p class="note">
+          球体设置只改变「桌面上有哪些球、怎么摆」，<b>不涉及计分、犯规与胜负判定</b>。
+          进入游戏（或在游戏内重开本局）时按这里的设置摆球。
+        </p>
+      </section>
+
+      <!-- 双人对战规则（三级）：原"本地双人规则"四项 + 0.7.0 新增的三项犯规罚则 -->
+      <section class="page" data-page="settings/rules/duo" data-parent="settings/rules">
+        <header class="ph">
+          <h2>双人对战规则</h2>
+          <p>只在「本地双人」与「人机对战」里生效，单人玩法不受影响</p>
+        </header>
+        <nav class="crumb"><button type="button" data-up>‹ 规则设置</button></nav>
+
+        <header class="ph sub">
+          <h3>分组与判罚</h3>
+          <p>大小号怎么定、黑八与白球落袋怎么处置</p>
+        </header>
+
+        <!-- 四项分组 / 判罚规则由 launcher.js 按 DUO_RULES 生成（镜像 src/duo.js，改一边要同步另一边） -->
+        <div id="p-duo-rules"></div>
+
+        <header class="ph sub">
+          <h3>犯规罚则</h3>
+          <p>默认全部关闭：犯规只换人。开启后才按真实规则判"手中球"</p>
+        </header>
+
+        <div id="p-foul-rules"></div>
+
+        <div class="actions">
+          <span class="saved" id="p-duo-saved">已保存</span>
+        </div>
+
+        <p class="note">
+          开球那一杆<b>进 2 颗及以上一定判定分组</b>，这条是硬规则。
+          「击球后没进袋」的罚则比真实中式规则更严，想要挑战再开 —— 默认关。
+        </p>
+      </section>
+
+      <!-- 帮助 -->
+      <section class="page" data-page="help">
+        <header class="ph">
+          <h2>帮助</h2>
+          <p>操作方式与玩法说明</p>
+        </header>
+
+        <h3 class="sh">基本操作</h3>
+        <ul class="help">
+          <li><b>通用</b>：<b>左键在任意处按下</b>即蓄力（光标右侧出现蓄力条，0→1→0 约 4 秒），松手击球；<b>蓄力期间杆向锁定</b> · <kbd>空格</kbd> 同样可蓄力</li>
+          <li><b>🤖 人机对战</b>：电脑扮演<b>玩家2</b>，走的是中式黑八同一套规则；轮到它时<b>自己思考 → 转杆 → 出杆</b>，屏幕上写出它打算打哪颗球、多大力度，镜头也跟着它转 · 四档难度就是它<b>手抖的程度</b>（简单约 30% / 中等约 45% / 困难约 70% / 极难约 90% 进球率，用真实物理跑出来的）· 开球永远是你来 · <b>无论输赢都会记进挑战历史</b>，历史页能看出对电脑的胜负</li>
+          <li><b>追踪模式</b>：视角自动对焦到白球后方 · <b>右键拖拽</b>可旋转视角，瞄准方向跟随相机 · 击球后自动拉远，球停稳后自动拉回</li>
+          <li><b>自由模式</b>：<b>右键拖拽</b>旋转视角（相机即方向）· <b>中键拖拽</b>平移 · 滚轮缩放 · <b>↺ 视角回归</b>复位机位</li>
+          <li><b>顶视模式</b>：正交俯视、视角固定 · 移动/拖拽鼠标改变杆子方向（手机上可<b>双指捏合放大</b>与<b>双指拖动平移</b>，见下）</li>
+        </ul>
+
+        <h3 class="sh">手机 / 平板（触摸操作）</h3>
+        <ul class="help">
+          <li><b>单指拖动</b>：旋转视角 · <b>双指捏合</b>：缩放 · <b>双指同向拖动</b>：平移（自由模式）</li>
+          <li><b>出杆</b>：按住右下角 <b>开球</b> 键开始蓄力，屏幕底部浮出大蓄力条，<b>松手即击球</b>（力度条 0→1→0 约 4 秒）· 按住期间不会弹出「选择 / 复制」菜单（已做长按防护）</li>
+          <li><b>追踪模式</b>下相机自动跟随白球，双指只保留缩放 —— 平移会被跟球逻辑立刻拉回，看着像“拖了又弹回去”</li>
+          <li><b>顶视模式</b>：<b>双指捏合</b>放大（最多 6 倍）、<b>双指拖动</b>平移 · 平移有边界，台子拖不出屏幕（最多把台面任意一处推到屏幕中心）· 按 <b>↺ 视角回归</b>回到整台俯视</li>
+          <li><b>竖屏</b>：球台会自动转 90° <b>竖着摆</b>（长边顺着屏幕长边、尽量占满屏幕），自由模式与顶视模式都适用 · 手机转屏会自动重摆一次机位</li>
+          <li><b>浏览器要求</b>：<b>用微信直接打开最省事</b>（已实测可跑），Chrome / Edge 也可以。物理引擎的 wasm 用到了 <b>Chrome / Android System WebView 75+</b> 才有的指令，小米 / 红米自带浏览器的内核停在 71，属于跑不了 —— 它会自己弹一张说明卡片告诉你原因，不会白屏</li>
+          <li><b>调试地址别混</b>：dev（<b>5183</b>，源码直出、不转译语法）只给桌面调试用；手机实测一律用 <b>npm run preview:lan</b>（<b>5184</b>，已降级的构建产物）。手机打开 5183 会看到一张"请换地址"的说明页</li>
+        </ul>
+
+        <h3 class="sh">开球与物理</h3>
+        <ul class="help">
+          <li><b>开球</b>：就是一杆普通的球，<b>进几颗算几颗</b>（不限制开球进袋数）· 三角球堆整体向开球线一侧微调 17cm，末排球不再每次固定冲进脚区角袋</li>
+          <li><b>真实开球</b>：球堆像楔形一样向两侧扇形散开（末排角球甚至略带向后），球会铺满整张台面，不再全堆在脚区</li>
+          <li><b>落袋不再“看球号”</b>：扇形扩散的角度分配重新调过，末排内圈球不再被固定甩进同两个角袋 —— 开球落袋是随机事件，实测约一半的开球一颗不进</li>
+        </ul>
+
+        <h3 class="sh">音效与背景音乐</h3>
+        <ul class="help">
+          <li><b>实时合成</b>：出杆、球撞球、撞库、落袋都是按力度即时算出来的，撞得越重越响越脆</li>
+          <li><b>3D 音效</b>：自由 / 追踪模式按"相机 → 事件点"做左右声道与距离衰减；<b>顶视模式固定音量</b></li>
+          <li><b>连击播报</b>：2 非常好 · 3 太棒了 · 4 四连无双 · 5 五连绝世 · 6 连及以上超越神的球技（跨杆累计，空杆或白球进袋清零）</li>
+          <li><b>一杆多响</b>：同一杆进 2 / 3 / 4 颗及以上另有专用音效（双响炮 · 三响炮 · 满堂彩）</li>
+        </ul>
+
+        <h3 class="sh">界面</h3>
+        <ul class="help">
+          <li><b>左下角 <kbd>?</kbd></b> 打开游戏内说明（全屏弹窗）</li>
+          <li>右下角一排：<b>↺ 视角回归</b> · <b>⟳ 重开本局</b>（完全重开一盘）· <b>⚙ 设置</b></li>
+          <li><b>返回主菜单</b>在「⚙ 设置」弹窗的顶部，点击后会询问是否放弃本局</li>
+          <li><b>画质</b>在「启动器 → 游戏设置 → 画质设置」里：四档（自动 / 低 / 中 / 高），一次把阴影、分辨率、桌面贴图与纹理都定下来</li>
+          <li>左上角面板里的<b>帧率</b>是实机读数（半秒平均），卡不卡看它最准</li>
+          <li><kbd>R</kbd> 重开本局 · <kbd>D</kbd> 碰撞体线框 · <kbd>H</kbd> 隐藏界面 · <kbd>Esc</kbd> 关闭弹窗</li>
+        </ul>
+
+        <h3 class="sh">玩法规则</h3>
+        <ul class="help">
+          <li>在 <b>启动器 → 游戏设置 → 规则设置 → 玩法规则</b> 里切换：现在是<b>中式黑八</b>（1~15 号五排三角形、8 号居中；1~7 全色、9~15 半色）</li>
+          <li><b>斯诺克规则</b>与<b>俄式规则</b>是未来开发的方向，界面上禁用（「敬请期待」），现阶段选不了</li>
+          <li>它只影响<b>桌面上有哪些球、怎么摆</b>；计分与胜负规则在后续版本加入</li>
+        </ul>
+      </section>
+
+      <!-- 关于 -->
+      <section class="page" data-page="about">
+        <header class="ph">
+          <h2>关于</h2>
+          <p>版本与制作信息</p>
+        </header>
+
+        <div class="about">
+          <div class="logo">幻梦-星光桌球</div>
+          <p class="tagline" id="about-ver">v0.8.0-test · 桌面版</p>
+          <ul class="meta">
+            <li><span>系列</span><b>幻梦系列（HUANMENG）</b></li>
+            <li><span>制作人</span><b>幻梦-拾光回廊工作室</b></li>
+            <li><span>开发工具</span><b>WorkBuddy</b></li>
+            <li><span>渲染</span><b>Three.js</b></li>
+            <li><span>物理</span><b>Rapier3D（9 尺台真实规格）</b></li>
+            <li><span>构建</span><b>Vite + Electron</b></li>
+            <li><span>平台</span><b>Windows 桌面端 / 网页端（手机浏览器可用）</b></li>
+            <li><span>音效</span><b>Web Audio 实时合成 + 素材</b></li>
+          </ul>
+
+          <h3 class="sh">联系方式</h3>
+          <!--
+            二维码现在是占位方框，**不发起任何图片请求**（没图还去请求会白吃一个 404）。
+            以后有图了：放进 public/bg/contact-qr.png，再给下面这个 div 加一句
+            data-qr-src="bg/contact-qr.png" 就会自动显示出来（逻辑在 launcher.js 里，十行）。
+          -->
+          <div class="contact">
+            <div class="qr" id="qr-box">
+              <span class="qr-ph">扫码<br />加好友</span>
+            </div>
+            <ul class="help">
+              <li><b>微信</b>：扫左侧二维码加好友（二维码后续补上）</li>
+              <li><b>工作室</b>：幻梦-拾光回廊工作室（注册中）</li>
+              <li><b>作者</b>：幻梦丶海炎</li>
+              <li>玩法建议、BUG 与合作意向，欢迎随时反馈</li>
+            </ul>
+          </div>
+
+          <h3 class="sh">音频素材署名</h3>
+          <ul class="help">
+            <li><b>爵士酒廊</b>：Bar Bugz《Backbay Lounge》· CC BY 3.0（Wikimedia Commons）</li>
+            <li><b>公园爵士</b>：《Jazz at the park》· CC0 公有领域（Wikimedia Commons）</li>
+            <li><b>欢呼 / 掌声</b>：《Hurray》《Clapping hurray》· CC0 公有领域（Wikimedia Commons）</li>
+            <li><b>连击语音</b>：百度翻译在线合成朗读的中文短句</li>
+          </ul>
+
+          <h3 class="sh">关于本作</h3>
+          <ul class="help">
+            <li><b>幻梦-星光桌球</b>是「幻梦」系列的第一款作品 —— 后续作品的命名都会带上这个系列名</li>
+            <li>由 <b>幻梦-拾光回廊工作室</b> 制作，全程使用 <b>WorkBuddy</b> 开发</li>
+            <li>「幻梦」代表作者 <b>幻梦丶海炎</b> 的个人作品线</li>
+          </ul>
+        </div>
+      </section>
+
+      <!-- 退出游戏 -->
+      <section class="page" data-page="quit">
+        <header class="ph">
+          <h2>退出游戏</h2>
+          <p>确定要退出幻梦-星光桌球吗？</p>
+        </header>
+
+        <div class="quit">
+          <p class="hint">未保存的进度只有当前这一局的球位，退出后需要重新摆球。</p>
+          <div class="actions">
+            <button class="primary" type="button" id="quit-yes">退出游戏</button>
+            <button class="ghost" type="button" id="quit-no">取消</button>
+          </div>
+          <p class="note" id="quit-note"></p>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <!-- 单局详情：点挑战历史里的某一条弹出（内容由 launcher.js 用历史里存下的数据填） -->
+  <div id="hist-detail">
+    <div class="hd-card">
+      <header class="hd-head">
+        <h3 id="hd-title">本局详情</h3>
+        <button type="button" id="hd-close" title="关闭">✕</button>
+      </header>
+      <div class="hd-rows" id="hd-rows"></div>
+      <button type="button" class="ghost hd-ok" id="hd-ok">知道了</button>
+    </div>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <script src="launcher-audio.js"></script>
+  <script src="launcher-quality.js"></script>
+  <!-- 挑战历史：与游戏页共用同一份实现（public/ 下原样下发） -->
+  <script src="history.js"></script>
+  <script src="launcher.js"></script>
+</body>
+</html>
