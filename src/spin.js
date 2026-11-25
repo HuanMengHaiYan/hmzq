@@ -50,9 +50,17 @@ export class SpinPad {
 
   /* ---------------- 对外 ---------------- */
 
-  /** 开始蓄力：盘淡入 */
-  show() {
+  /**
+   * 开始蓄力：盘淡入。
+   * @param cx/cy 按下点的屏幕坐标 —— 桌面在**鼠标位置**生成摇杆（按下哪里盘就出现在哪里，
+   *              蓄力期间鼠标就在盘心，划一下就选定击球点，不用满屏找盘）。
+   *              不传（触摸端 / 键盘蓄力）沿用 CSS 的固定位置：左下角，避开右下角开球键 ——
+   *              触摸的手指正按在键上，盘盖在手指底下既看不见也拖不了。
+   */
+  show(cx, cy) {
     if (!this.ready) return;
+    if (cx != null && cy != null) this.#placeAt(cx, cy);
+    else this.#clearPlace();
     this.pad.classList.add('show');
     this.pad.setAttribute('aria-hidden', 'false');
     // 盘在隐藏时量不到尺寸（窄屏 / 旋转屏会换样式），露出来这一刻补画一次
@@ -94,6 +102,29 @@ export class SpinPad {
   }
 
   /* ---------------- 内部 ---------------- */
+
+  /** 把盘挪到按下点（居中对齐；钳在屏幕内，别让盘探出窗口）。不碰 transform —— 淡入动画在用它。 */
+  #placeAt(cx, cy) {
+    const pad = this.pad;
+    const w = pad.offsetWidth || 84;
+    const h = pad.offsetHeight || 110;                 // 圆盘 + 下面那行「击球点」小字
+    const m = 8;                                       // 屏幕边缘留白
+    const vw = globalThis.innerWidth || 1280;
+    const vh = globalThis.innerHeight || 800;
+    const x = Math.min(Math.max(cx, w / 2 + m), vw - w / 2 - m);
+    const y = Math.min(Math.max(cy, h / 2 + m), vh - h / 2 - m);
+    pad.style.left = `${(x - w / 2).toFixed(0)}px`;
+    pad.style.top = `${(y - h / 2).toFixed(0)}px`;
+    pad.style.bottom = 'auto';
+  }
+
+  /** 清掉位置覆盖，回到 CSS 的固定位置（触摸端路径） */
+  #clearPlace() {
+    const pad = this.pad;
+    pad.style.left = '';
+    pad.style.top = '';
+    pad.style.bottom = '';
+  }
 
   #wire() {
     const pad = this.pad;

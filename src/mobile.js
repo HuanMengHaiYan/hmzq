@@ -100,7 +100,8 @@ export function bindShootButton({ state, canCharge, onStart, onEnd, btns, canUse
     if (!usable(e.currentTarget)) return;      // 双人模式：不是你的回合，按了没反应
     activeId = e.pointerId;
     for (const b of list) b.classList.add('pressed');
-    onStart();
+    // 把按下坐标带过去：桌面按开球键时，杆法盘就在鼠标底下弹出（见 main.js 的 beginCharge）
+    onStart(e.clientX, e.clientY);
   };
   // 抬手挂在 window 上：按住后手指滑出按钮再松开，也要能正常出杆
   const up = (e) => {

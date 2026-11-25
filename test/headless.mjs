@@ -19,7 +19,7 @@ import {
 } from './suites/table-geometry.mjs';
 import { testImpactVariance, testBreakFan, testSpinFriction } from './suites/sim-units.mjs';
 import {
-  testSpinAngular, testSpinPhysics, testSpinCushion, testSpinSettle,
+  testSpinAngular, testSpinPhysics, testSpinCushion, testSpinThrow, testSpinSettle,
 } from './suites/spin.mjs';
 import {
   testBreaks, testBreakPots, testGuardNoDeadlock, testBreakAsymmetry,
@@ -77,6 +77,7 @@ testSpinFriction();
 testSpinAngular();
 testSpinPhysics();
 testSpinCushion();
+testSpinThrow();
 testSpinSettle();
 
 // ---- 音效：素材与连击播报（纯逻辑，不需要 Rapier） ----

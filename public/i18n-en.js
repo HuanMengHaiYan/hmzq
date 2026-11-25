@@ -289,8 +289,8 @@
     '界面与快捷键': 'Interface and hotkeys',
     '击球点': 'Contact',                     // 杆法盘下面那行小字（位置窄，用短词）
     '杆法（旋转球）': 'Spin (contact point)',
-    '<b>按住开球键</b>时左下角浮出<b>杆法盘</b>：盘里的红点就是<b>击球点</b>，默认在正中心（中杆，就是以前那种普通击球）':
-      '<b>Hold the shoot button</b> and the <b>cue-ball pad</b> fades in at the bottom left: the red dot is the <b>contact point</b>, centred by default (a plain centre-ball hit, exactly like before)',
+    '<b>按住开球键</b>时浮出<b>杆法盘</b>：桌面就在你按下的位置弹出，手机固定在左下角。盘里的红点就是<b>击球点</b>，默认在正中心（中杆，就是以前那种普通击球）':
+      '<b>Hold the shoot button</b> and the <b>cue-ball pad</b> appears right where you pressed (fixed to the bottom left on touch): the red dot is the <b>contact point</b>, centred by default (a plain centre-ball hit, exactly like before)',
     '<b>怎么调</b>：手指<b>按住红点拖</b>（拖出圆盘也不会断）· 桌面按住开球键后<b>鼠标划过圆盘</b>即可 · 蓄力时按 <kbd>↑</kbd><kbd>↓</kbd><kbd>←</kbd><kbd>→</kbd> 微调 · <b>双击圆盘</b>回中':
       '<b>How to aim it</b>: <b>drag the dot</b> with a finger (it keeps tracking even outside the pad) · on desktop, hold the shoot button and <b>move the mouse over the pad</b> · while charging, nudge it with <kbd>↑</kbd><kbd>↓</kbd><kbd>←</kbd><kbd>→</kbd> · <b>double-click the pad</b> to recentre',
     '<b>往上 = 高杆</b>（跟进：撞完白球继续往前跑）· <b>往下 = 低杆</b>（回旋：撞完白球往回缩）· <b>左右 = 左 / 右塞</b>（撞库反弹角变化，也能把目标球甩偏）· 斜着拖就是高低杆 + 塞一起来':

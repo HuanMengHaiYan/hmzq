@@ -1039,11 +1039,11 @@ pad0.op === '0' && pad0.pe === 'none'
   : fail('杆法盘平时就露着：' + JSON.stringify(pad0));
 
 // 按住开球键 → 淡入（鼠标路径：整个屏幕左键按下即蓄力）
-await evaluate(`(function(){
+const pressAt = await evaluate(`(function(){
   var b = document.getElementById('btn-shoot'), r = b.getBoundingClientRect();
   b.dispatchEvent(new PointerEvent('pointerdown', { pointerId: 1, pointerType: 'mouse', isPrimary: true,
     bubbles: true, cancelable: true, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2, button: 0 }));
-  return 1;
+  return JSON.stringify([Math.round(r.left + r.width / 2), Math.round(r.top + r.height / 2)]);
 })()`);
 // 淡入是 0.14s 的 CSS 过渡，但无头环境里过渡跟着帧走（这局物理很重，帧率只有个位数），
 // 320ms 读到过 opacity 还是 0 —— 等足 800ms 再读，别把"还没渲染完"当成"没淡入"。
@@ -1059,6 +1059,16 @@ pad1.pe === 'auto' && pad1.charging
 Math.abs(pad1.dx - pad1.cx) <= 2 && Math.abs(pad1.dy - pad1.cy) <= 2
   ? pass('红点在正中心（默认中杆）')
   : fail('红点没落在盘心：' + JSON.stringify({ ring: [pad1.cx, pad1.cy], dot: [pad1.dx, pad1.dy] }));
+
+// 桌面：盘必须生成在**按下的位置**（用户指定的交互），不是固定在左下角。
+// 按下点在右下角开球键上；盘被屏幕边缘钳住时允许有一段差，但"在屏幕右半边、
+// 而且离按下点比离旧默认位置（left 16px）近"这两条必须成立。
+const pressed = JSON.parse(pressAt);
+const nearPress = Math.abs(pad1.cx - pressed[0]) <= 40 && Math.abs(pad1.cy - pressed[1]) <= 80;
+nearPress
+  ? pass(`桌面：盘在按下位置附近弹出（按下 ${pressed.join(',')} → 盘心 ${pad1.cx},${pad1.cy}）`)
+  : fail('桌面没在按下位置生成盘（还在固定左下角？）：' +
+      JSON.stringify({ press: pressed, ring: [pad1.cx, pad1.cy] }));
 
 // 拖到最下（低杆）：第二根手指按在盘上拖，红点要真跟着走
 await evaluate(`(function(){

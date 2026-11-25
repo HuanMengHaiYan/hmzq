@@ -15,8 +15,10 @@
  *    要验的东西是"杆法之间的差"，不是"这一杆准不准"。
  */
 import { BALL_R, BALL_MASS, SHOT, PHYS } from '../../src/constants.js';
+import RAPIER from '@dimforge/rapier3d-compat';
 import {
   spinAngular, applyRollFriction, clampBallSpeeds, applyCushionEnglish,
+  applyThrow, randomizeBallImpacts,
 } from '../../src/sim.js';
 import { buildWorld, spawnBall, check } from '../lib/harness.mjs';
 
@@ -329,6 +331,107 @@ export function testSpinCushion() {
   check(sideRun.maxAbsZ > 0.05 && straightRun.maxAbsZ < 0.01,
     '跑偏只发生在带塞那一杆（无塞那杆全程直线）',
     `带塞最大 |z| = ${(sideRun.maxAbsZ * 100).toFixed(1)}cm ｜ 无塞 ${(straightRun.maxAbsZ * 1000).toFixed(1)}mm`);
+
+  // 8) 方向必须对（2026-11-25 用户实测踩过的坑：偏是偏了，方向反了看不出来 ——
+  //    右塞（ω.y>0）撞库后要往**玩家右侧**弹（真实台球：摩擦把球往塞的那一侧推）。
+  //    之前写成 −englishDeg·ω.y，右塞往左弹，横向差照样有、上面的断言照样绿。）
+  check(sideRun.z > 0.02,
+    '右塞（ω.y > 0）撞库往玩家右侧弹（真实方向，不是只要"偏了"就行）',
+    `终点 z = ${(sideRun.z * 100).toFixed(1)}cm（+z = 玩家右手边）`);
+  const leftRun = runInto(-CFG.maxSideSpin);
+  check(leftRun.z < -0.02,
+    '左塞（ω.y < 0）撞库往玩家左侧弹（与右塞镜像）',
+    `终点 z = ${(leftRun.z * 100).toFixed(1)}cm`);
+}
+
+/* ============ ③ 真物理：甩球（spin-induced throw） ============ */
+
+export function testSpinThrow() {
+  console.log('\n[杆法·甩球] 带塞直打目标球，目标球要被"甩"偏（打目标球时侧旋的唯一效果）');
+
+  // —— 纯函数层 ——
+  const mob = (vx, vz, wy) => {
+    const st = { x: vx, z: vz, wy };
+    return {
+      st,
+      body: {
+        angvel: () => ({ x: 0, y: st.wy, z: 0 }),
+        linvel: () => ({ x: st.x, y: 0, z: st.z }),
+        setLinvel: (l) => { st.x = l.x; st.z = l.z; },
+      },
+    };
+  };
+  // 1) 无塞不参与（中心击球零效果 = 老手感）
+  const plain = mob(1.2, 0, 0);
+  check(applyThrow(plain, mob(0.9, 0, 0)) === false,
+    '无塞（ω.y = 0）不甩球 —— 中心击球的老路径逐位不动', '');
+  // 2) 残塞低于阈值不甩
+  const tiny = mob(1.2, 0, CFG.englishMinSpin - 0.5);
+  check(applyThrow(tiny, mob(0.9, 0, 0)) === false,
+    `低于 ${CFG.englishMinSpin} rad/s 的残塞不甩（收球阶段的轻碰不搅局）`, '');
+  // 3) 右塞把目标球往左甩、只转方向不改速率
+  const cue = mob(1.5, 0, CFG.maxSideSpin);
+  const obj = mob(0.9, 0, 0);
+  check(applyThrow(cue, obj) === true, '满塞甩球生效', '');
+  const deg = (Math.atan2(obj.st.z, obj.st.x) * 180) / Math.PI;
+  const expect = Math.min(CFG.throwDeg * CFG.maxSideSpin, CFG.maxThrowDeg);
+  check(Math.abs(obj.st.z) > 0 && deg < 0,
+    '右塞（ω.y > 0）把目标球往**左**甩（真实台球方向：摩擦把目标球往塞的反侧拽）',
+    `出射偏角 ${deg.toFixed(2)}°（负 = 左）`);
+  check(Math.abs(Math.abs(deg) - expect) < 0.3,
+    `满塞甩角 = throwDeg·maxSideSpin = ${expect.toFixed(2)}°（真实 2~4°，游戏给到 5° 是为了看得见）`,
+    `实测 ${Math.abs(deg).toFixed(2)}°`);
+  const spd = Math.hypot(obj.st.x, obj.st.z);
+  check(Math.abs(spd - 0.9) < 1e-9, '甩球只旋转目标球方向、不改速率', `|v| = ${spd.toFixed(6)}`);
+  check(Math.abs(obj.st.z / obj.st.x + Math.tan((expect * Math.PI) / 180)) < 1e-9,
+    '甩角方向与符号推导一致（θ = +throwDeg·ω.y）', `z/x = ${obj.st.z.toFixed(4)}`);
+
+  // —— 真物理层（事件驱动路径 = 游戏同款：world.step → clamp → 摩擦 → randomizeBallImpacts）——
+  // 带塞直打 0.30m 外的目标球，量目标球**撞后第一段**的出射偏角。
+  const runStraight = (sx) => {
+    const { world } = buildWorld();
+    const cueB = spawnBall(world, 0, 0, 0);
+    const target = spawnBall(world, 1, 0.30, 0);
+    const eventQueue = new RAPIER.EventQueue(true);
+    const byHandle = new Map();
+    for (const b of [cueB, target]) byHandle.set(b.body.collider(0).handle, b);
+    const bodies = [cueB.body, target.body];
+    const impulse = SHOT.minImpulse + (SHOT.maxImpulse - SHOT.minImpulse) * 0.5;
+    const v = impulse / BALL_MASS;
+    cueB.body.applyImpulse({ x: impulse, y: 0, z: 0 }, true);
+    cueB.body.setAngvel(spinAngular({ x: 1, z: 0 }, v, { x: sx, y: 0 }), true);
+    const prevVel = new Map();
+    let tAng = null;
+    for (let i = 0; i < 4800; i++) {
+      prevVel.clear();
+      for (const b of [cueB, target]) {
+        const lv = b.body.linvel();
+        prevVel.set(b, { x: lv.x, z: lv.z });
+      }
+      world.step(eventQueue);
+      clampBallSpeeds(bodies);
+      applyRollFriction(bodies);
+      randomizeBallImpacts(eventQueue, byHandle, prevVel, { variance: 0, minSpeed: 0.1 });
+      if (tAng === null) {
+        const tv = target.body.linvel();
+        const s = Math.hypot(tv.x, tv.z);
+        if (s > 0.05) tAng = (Math.atan2(tv.z, tv.x) * 180) / Math.PI;
+      }
+      if (tAng !== null && Math.hypot(cueB.body.linvel().x, cueB.body.linvel().z) < PHYS.sleepSpeed) break;
+    }
+    return tAng;
+  };
+  const rightRun = runStraight(1);
+  const leftRun = runStraight(-1);
+  const noneRun = runStraight(0);
+  check(rightRun !== null && rightRun < -1,
+    '真物理：右塞直打，目标球被甩向左（|偏角| > 1°）',
+    `右塞 ${rightRun?.toFixed(2)}° · 左塞 ${leftRun?.toFixed(2)}° · 无塞 ${noneRun?.toFixed(2)}°`);
+  check(leftRun !== null && leftRun > 1,
+    '真物理：左塞直打，目标球被甩向右（与右塞镜像）', '');
+  check(Math.abs(noneRun ?? 0) < 0.3,
+    '真物理：无塞直打几乎零偏角（甩球没有污染中心击球）',
+    `无塞偏角 ${(noneRun ?? 0).toFixed(3)}°`);
 }
 
 export function testSpinSettle() {

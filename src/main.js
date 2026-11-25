@@ -41,7 +41,7 @@ import { createConfirm } from './confirm.js';
 import { Quality } from './quality.js';
 import { mountQualityUI } from './quality-ui.js';
 import { host } from './platform/index.js';
-import { markMobileShell, bindShootButton } from './mobile.js';
+import { markMobileShell, bindShootButton, IS_TOUCH } from './mobile.js';
 import { initAndroidBack } from './android.js';
 
 /**
@@ -372,7 +372,7 @@ function applyMode(mode) {
 /* ---------------------------------------------------------
  * 蓄力 & 出杆
  * ------------------------------------------------------- */
-function beginCharge() {
+function beginCharge(chargeX, chargeY) {
   if (state.shooting || cue.potted || state.charging) return;
   state.charging = true;
   state.chargeT = 0;
@@ -382,7 +382,12 @@ function beginCharge() {
   state.lockedAim = state.aimAngle;
   rig.lockAim();                    // 冻结机位（取消补间 + 吃掉阻尼惯性 + 关手势）
   hud.showCharge(pointer.x, pointer.y);
-  spinPad.show();                   // 杆法盘淡入：蓄力期间可以拖红点改击球点
+  // 杆法盘在哪弹出：桌面 = 按下点的位置（input.js 在 chargeStart 之前已把坐标喂给
+  // onPointerMove / 或开球键的 down 直接传进来），摇杆就在鼠标底下生成，划一下即选中；
+  // 触摸 = 固定在左下角（手指正按着开球键，盘盖在手指底下没法看）。
+  const padX = IS_TOUCH ? undefined : (chargeX != null ? chargeX : pointer.x);
+  const padY = IS_TOUCH ? undefined : (chargeY != null ? chargeY : pointer.y);
+  spinPad.show(padX, padY);
 }
 
 function releaseCharge() {

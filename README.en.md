@@ -68,7 +68,7 @@ The browser checks need a prior `npx vite build` — they test `dist/`.
 | Help | the <kbd>?</kbd> button, bottom left |
 | Ball in hand | drag the cue ball anywhere legal |
 
-| Set the contact point | drag the red dot on the cue-ball pad (bottom left, appears while charging) |
+| Set the contact point | drag the red dot on the cue-ball pad (appears where you pressed) |
 | Recentre the contact point | double-click the pad |
 
 On phones and tablets: one finger orbits, two fingers pan or pinch-zoom, and a dedicated **Break / Shoot**
@@ -87,8 +87,9 @@ While charging, drag the red dot on the pad with a second finger to apply spin.
 
 ## Spin (`src/spin.js` + `SHOT.spin`)
 
-Hold the shoot button and a **cue-ball pad** fades in at the bottom left. The red dot on it is the
-**contact point** — centre by default, which reproduces the old shot bit for bit.
+Hold the shoot button and a **cue-ball pad** appears right where you pressed (fixed to the bottom
+left on touch). The red dot on it is the **contact point** — centre by default, which reproduces the
+old shot bit for bit.
 
 | Drag to | Normalised | Result |
 |---|---|---|
@@ -108,6 +109,10 @@ Hold the shoot button and a **cue-ball pad** fades in at the bottom left. The re
 The up/down gains are **deliberately asymmetric**: the cloth friction model does not respond to over-spin at
 all (roll 0.8 / 1.0 / 2.15 all travel the same +0.45 m), so follow tops out at 0.8 while draw needs −0.95 to
 actually pull the cue ball back.
+
+**Throw** (`applyThrow()`): with side spin, the cue ball's contact friction deflects the object ball —
+right english throws it left — up to ~5.3° at full spin. Without it, side spin would have literally no
+effect on a plain object-ball hit (user-reported gap).
 
 Cushion english is applied by hand (`applyCushionEnglish()`): Rapier's contact friction only turns a
 perpendicular rebound by **1.4°** at ω.y = 24, so the outgoing velocity is rotated by

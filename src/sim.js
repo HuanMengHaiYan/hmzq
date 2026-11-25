@@ -24,7 +24,11 @@ import { BALL_R, PHYS, BREAK_SHOCK, SHOT } from './constants.js';
  *    ω.y（塞本身）原样保留，继续受 spinDecel 衰减。
  *
  * 方向依据（经典台球物理）：球向右带塞（ω.y > 0）正撞库边时，接触点表面速度是
- * **往左**的（v = ω×r，r 指向库边），库边给的摩擦把它往右推 → 出射方向偏向右侧。
+ * **往左**滑的（v = ω×r，r 指向库边），库边给的摩擦与滑移反向 → 把球往**右**推 →
+ * 出射方向偏向塞的那一侧。⚠️ 实测踩过的坑：这里写成 `-englishDeg·ω.y` 会把方向
+ * 弄反（右塞往左弹），2026-11-25 用户试玩才暴露 —— 因为"偏是偏了"，方向错看不出来。
+ * 判定方法：撞击后速度已反向（≈ −V, 0），旋转公式 z' = −x·sinθ = +V·sinθ，
+ * 想要 z' > 0（往右）必须 θ > 0，所以系数必须是 **+englishDeg·ω.y**。
  *
  * ⚠️ 中心击球的 ω.y = 0 → 这个函数整体不参与，老手感（长台 / 开球标定）完全不动。
  */
@@ -35,7 +39,7 @@ export function applyCushionEnglish(ball) {
   const lv = ball.body.linvel();
   const spd = Math.hypot(lv.x, lv.z);
   if (spd < 0.05) return false;                         // 还没真正弹出去，别转
-  const deg = clamp(-cfg.englishDeg * av.y, -cfg.maxEnglishDeg, cfg.maxEnglishDeg);
+  const deg = clamp(cfg.englishDeg * av.y, -cfg.maxEnglishDeg, cfg.maxEnglishDeg);
   const th = (deg * Math.PI) / 180;
   const cs = Math.cos(th), sn = Math.sin(th);
   // 绕 y 轴转 θ：(x, z) → (x·cosθ + z·sinθ, −x·sinθ + z·cosθ)。速度大小不变。
@@ -49,6 +53,44 @@ export function applyCushionEnglish(ball) {
     x: (vz / BALL_R) * k,
     y: av.y,
     z: (-vx / BALL_R) * k,
+  }, true);
+  return true;
+}
+
+/**
+ * 甩球（spin-induced throw）：带塞的白球撞上目标球，接触摩擦把目标球"甩"偏一点。
+ * ------------------------------------------------------------------
+ * 这是侧旋在**打目标球**时的主要效果（撞库只是次要效果）：
+ * 白球接触面的表面速度因侧旋产生横向分量（v = ω×r），摩擦把它传给目标球 ——
+ * **右塞（ω.y > 0）把目标球往左甩、白球自己反而被往右推**（一对反作用力）。
+ * 没有这一下，直打目标球时侧旋就是零效果，玩家完全感觉不出左右塞（2026-11-25 用户实测）。
+ *
+ * 为什么手工补：和库边加塞同一个原因 —— Rapier 的接触摩擦只把塞的横向分量传 1.4°，
+ * 真实台球是 2~4°（塞越满、球越慢甩得越多）。做法：把目标球撞后的速度绕 y 轴转 θ，
+ * θ = throwDeg·ω.y（钳在 ±maxThrowDeg）。旋转而不是加横向速度：
+ * 目标球刚被撞飞时还在滑动段，加横向速度会被台布摩擦按比例磨掉一部分、方向看着"飘"，
+ * 旋转则一步到位、不改速率。
+ *
+ * ⚠️ 符号推导（别再翻车）：目标球速度 ≈ V·n（n = 白球→目标球）。旋转 z' = −V·sinθ，
+ *    右塞要往左甩（z' < 0）→ sinθ > 0 → θ = **+throwDeg·ω.y**。
+ *    （注意与库边加塞同号是巧合的正确：库边那边速度已反向，几何方向恰好相反。）
+ */
+export function applyThrow(spinBall, objectBall) {
+  const cfg = SHOT.spin;
+  // 老测试的假球不一定实现了 angvel / setLinvel：缺了就当"没塞"，别炸
+  if (!spinBall.body.angvel || !objectBall.body.setLinvel) return false;
+  const wy = spinBall.body.angvel().y;
+  if (Math.abs(wy) < cfg.englishMinSpin) return false;
+  const lv = objectBall.body.linvel();
+  const spd = Math.hypot(lv.x, lv.z);
+  if (spd < 1e-4) return false;                       // 还没被撞飞（事件可能早于求解），别转
+  const deg = clamp(cfg.throwDeg * wy, -cfg.maxThrowDeg, cfg.maxThrowDeg);
+  const th = (deg * Math.PI) / 180;
+  const cs = Math.cos(th), sn = Math.sin(th);
+  objectBall.body.setLinvel({
+    x: lv.x * cs + lv.z * sn,
+    y: lv.y,
+    z: -lv.x * sn + lv.z * cs,
   }, true);
   return true;
 }
@@ -174,6 +216,13 @@ export function randomizeBallImpacts(events, byHandle, prevVel, opts = {}) {
     if (onImpact) {
       onImpact({ kind: 'ball', closing, x: (t1.x + t2.x) / 2, z: (t1.z + t2.z) / 2 });
     }
+    // 甩球：塞大的一方当"带塞的白球"，另一颗当被甩的目标球。
+    // 与随机传导（variance）互相独立 —— variance=0 的测试 / 标定场景也必须有甩球。
+    // （老测试里的假球不一定实现 angvel，探一下再调，别让它们炸。）
+    const wy1 = b1.body.angvel ? b1.body.angvel().y : 0;
+    const wy2 = b2.body.angvel ? b2.body.angvel().y : 0;
+    if (Math.abs(wy1) >= Math.abs(wy2)) applyThrow(b1, b2);
+    else applyThrow(b2, b1);
     if (variance <= 0) return;
 
     const m = b1.body.mass ? b1.body.mass() : 0.17;
