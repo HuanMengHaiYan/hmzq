@@ -18,6 +18,9 @@
     球组列表也必须和 src/rules.js 保持一致。
   -->
   <link rel="stylesheet" href="launcher.css" />
+  <!-- 中英文切换：词表先加载、运行时随后。与游戏页共用同一份实现（public/i18n.js）。 -->
+  <script src="i18n-en.js"></script>
+  <script src="i18n.js"></script>
   <script>
     // 与游戏页一致：运行期错误不要变成白屏
     window.__gameErrors = [];
@@ -44,6 +47,11 @@
         <h1>幻梦-星光桌球</h1>
         <p class="sub">HUANMENG&nbsp;STARLIGHT&nbsp;POOL</p>
         <p class="ver" id="ver">自由练习版</p>
+        <!-- 语言切换：data-i18n-skip 让「中文 / English」两个按钮自己不被翻译 -->
+        <div class="lang-sw" id="lang-sw" data-i18n-skip role="group" aria-label="Language">
+          <button type="button" data-lang="zh">中文</button>
+          <button type="button" data-lang="en">English</button>
+        </div>
       </div>
 
       <!--
@@ -639,6 +647,7 @@
           <li><b>返回主菜单</b>在「⚙ 设置」弹窗的顶部，点击后会询问是否放弃本局</li>
           <li><b>画质</b>在「启动器 → 游戏设置 → 画质设置」里：四档（自动 / 低 / 中 / 高），一次把阴影、分辨率、桌面贴图与纹理都定下来</li>
           <li>左上角面板里的<b>帧率</b>是实机读数（半秒平均），卡不卡看它最准</li>
+          <li>语言：启动器右上角的「中文 / English」胶囊按钮，或游戏内「⚙ 设置 → 语言」；两边共用一份选择，切完立刻生效并记住</li>
           <li><kbd>R</kbd> 重开本局 · <kbd>D</kbd> 碰撞体线框 · <kbd>H</kbd> 隐藏界面 · <kbd>Esc</kbd> 关闭弹窗</li>
         </ul>
 

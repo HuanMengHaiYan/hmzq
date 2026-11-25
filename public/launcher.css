@@ -117,6 +117,30 @@ body.leaving .shell { opacity: 0; transform: scale(0.985); }
 }
 .brand .ver { margin: 10px 0 0; font-size: 12px; color: var(--sub); }
 
+/* 语言切换：两个小胶囊。窄屏（竖屏手机）也留着 —— 手机用户同样要能换语言，
+   所以别跟着 .ver 一起 display:none（那个是版本号，藏在手机上没关系）。 */
+.lang-sw { display: inline-flex; gap: 6px; margin-top: 12px; }
+.lang-sw button {
+  font: inherit;
+  font-size: 11.5px;
+  line-height: 1;
+  padding: 7px 12px;
+  min-height: 30px;
+  color: var(--sub);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s, border-color 0.15s;
+}
+.lang-sw button:hover { color: #fff; background: rgba(255, 255, 255, 0.13); }
+.lang-sw button.on {
+  color: #04121f;
+  background: var(--accent);
+  border-color: var(--accent);
+  font-weight: 700;
+}
+
 .menu { display: flex; flex-direction: column; gap: 6px; flex: 1; }
 
 .mi {
@@ -702,6 +726,8 @@ ul.help li b { color: #fff; }
   .brand { padding: 0; }
   .brand h1 { font-size: 20px; letter-spacing: 3px; }
   .brand .sub, .brand .ver { display: none; }
+  .lang-sw { margin-top: 6px; }
+  .lang-sw button { min-height: 28px; padding: 6px 10px; font-size: 11px; }
   /* 菜单横排可滑：隐藏滚动条，触摸目标 ≥44px */
   .menu { flex-direction: row; overflow-x: auto; gap: 8px; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
   .menu::-webkit-scrollbar { display: none; }

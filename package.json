@@ -18,6 +18,7 @@
     "check:smoke": "node test/browser-smoke.mjs",
     "check:file": "node test/browser-file.mjs",
     "check:solo": "node test/browser-solo.mjs",
+    "check:i18n": "node scripts/i18n-audit.mjs && node test/browser-i18n.mjs",
     "shots:model": "node scripts/model-shots.mjs",
     "android:apk": "node scripts/android-apk.mjs",
     "android:apk:debug": "node scripts/android-apk.mjs debug",

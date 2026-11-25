@@ -780,11 +780,17 @@ body.duo #shoot-dock { bottom: calc(160px + var(--safe-b, 0px)); }
   flex: 1;
   overflow-y: auto;
   padding: 22px clamp(20px, 5vw, 72px) 56px;
-  columns: 2;
+  /* 两列用 grid，别用 columns：.help-body 是固定高度（flex:1）+ break-inside:avoid 的
+     多列容器，内容装不下时 Chromium 会继续排**溢出列**（往右长），后几段直接跑到
+     屏幕外、要拖横向滚动条才看得见 —— 不是纵向滚动。grid 是各段独立占格，装不下就
+     正常往下滚。（2026-11-25 帮助弹窗只显示前三段时查出来的） */
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-content: start;
   column-gap: 40px;
 }
-@media (max-width: 860px) { .help-body { columns: 1; } }
-.help-sec { break-inside: avoid; margin: 0 0 24px; }
+@media (max-width: 860px) { .help-body { grid-template-columns: minmax(0, 1fr); } }
+.help-sec { margin: 0 0 24px; }
 .help-sec h3 {
   margin: 0 0 10px;
   font-size: 13px;

@@ -3,7 +3,10 @@
 > 「幻梦」是系列名：本作由 **幻梦-拾光回廊工作室** 制作（使用 WorkBuddy 开发），
 > 后续作品命名都会带上这个系列名。
 
+**中文** · [English](README.en.md)
+
 Three.js 渲染 + Rapier3D 物理的 3D 台球，9 尺台真实规格（台面 2.54×1.27m、球径 57.15mm、球质量 0.17kg）。
+界面支持**中英文切换**（启动器右上角 / 游戏内「⚙ 设置 → 语言」），见「## 中英文切换」。当前版本 **0.8.0-test**。
 
 ## 命令
 
@@ -11,7 +14,7 @@ Three.js 渲染 + Rapier3D 物理的 3D 台球，9 尺台真实规格（台面 2
 |---|---|
 | `npm run dev` | 浏览器开发服务器（:5183，已开局域网监听）；**不转译语法，只适合内核较新的浏览器 / 桌面调试** |
 
-> 全部 21 条 script 的逐条说明，以及**打 exe / 打 APK 分别该跑哪几条**，见 `docs/npm-scripts.md`。
+> 全部 25 条 script 的逐条说明，以及**打 exe / 打 APK 分别该跑哪几条**，见 `docs/npm-scripts.md`。
 
 | **`npm run preview:lan`** | **手机实测用这个**：构建（ES2019 目标，兼容老内核）+ 起预览服务器（**:5184**，局域网，启动时会打印手机该打开的地址）。带 `--emptyOutDir false` 是为了不被安全钩子拦清目录，代价是 `dist/` 会留存旧哈希文件，偶尔手动清一次即可 |
 | `npm run build` | 浏览器构建 → `dist/`（含启动器） |
@@ -21,7 +24,8 @@ Three.js 渲染 + Rapier3D 物理的 3D 台球，9 尺台真实规格（台面 2
 | `npm run check` | 上面三个一起跑（改完 `index.html` 自检 / 升依赖 / 加语法后跑一次） |
 | `npm run check:smoke` | 无头 Chrome 真开一次游戏（不弹内核卡 / 无报错 / canvas 与帧率都在）；加 `--simulate-old-kernel` 复现 Chrome 83 内核 |
 | `npm run check:solo` | 端到端 15 段（`[1]`~`[13]` 把环境钉成**桌面**：`maxTouchPoints=0`，否则无头 Chrome 会被判成触摸设备、测不到鼠标分支；`[13b]` 反过来开触摸模拟 + 竖屏走手机分支）：启动器多级路由（含竖屏三级返回栈）→ 自由球摆球（右键转视角 / 滚轮缩放 / 左键拖球 / 每杆前重摆）→ 设置四个二级页 → 进游戏 → HUD → 结算落库 → 详情弹窗 → 重开确认 → 画质五档与自定义展开 → 移动端触摸（单指拖球时相机不许动 / 双指转视角时白球不许动）→ 本地双人（回合横幅 / 两颗开球键的归属 / 已进袋分两栏 / **定组后半透明材质** / 白球落袋自由摆球 / 摆球时右键转视角且不把白球带跑 / 顶视摆球放开平移与缩放）→ 玩法规则页（中式黑八 + 斯诺克 / 俄式禁用占位）→ **🤖 人机对战**（启动器卡片与四档难度是真入口 / 电脑自己思考 → 转杆 → 出杆 / 转杆动画看得见 / 只打合法球）；先 build |
-| `npm test` | 物理层 + 逻辑层 **674 项** + 渲染层 31 项 |
+| `npm run check:i18n` | 中英文切换：先静态审计词表覆盖率（HTML / JS 里的中文有没有英文条目），再用无头 Chrome 真点一遍「切英文 → 扫全页残留汉字 → 切回中文 → 验是否还原」，并留三张对照图到 `docs/i18n-shots/`；先 build |
+| `npm test` | 物理层 + 逻辑层 **719 项** + 渲染层 31 项 |
 | `npm run android:apk` | 打出 Android release APK（需 `E:/android-tools` 与 `android/keystore.properties`，见「### Android APP」）；加 `:debug` 打 debug 包 |
 | `npm run apk:check` | 装机前核验：签名是否有效 + 包里的 `index.html` 是不是刚构建的那份 |
 | `npm run electron:dev` | vite dev server + Electron 窗口（热更新） |
@@ -51,6 +55,8 @@ public/
   launcher.html launcher.css launcher.js   启动器（多级子路由：常规 / 娱乐 / 历史 / 设置 / 帮助 / 关于 / 退出）
   launcher-audio.js                        启动器的声音设置面板（抽成类，避免 launcher.js 超 300 行）
   launcher-quality.js                      启动器的画质设置面板（与 src/quality.js 镜像，见下方同步警告）
+  i18n.js                                  中英文切换运行时（按中文原文查表 / 还原 / 自动接管 DOM 变化）
+  i18n-en.js                               词表：486 条精确条目 + 85 条正则规则（变量文案）
   bg/launcher.png                          启动器背景（游戏实机截图，做毛玻璃用）
   audio/                                   背景音乐 / 欢呼 / 连击语音（见「音频素材来源」）
 src/
@@ -99,6 +105,45 @@ test/           见下
 所以 `test/browser-solo.mjs` 里对三行是**连 `getComputedStyle(...).display` 一起断言**的。
 
 弹窗打开期间 `state.uiBlocked` 为真，指针与按键不会落到球台上（`src/input.js` 里判）。
+
+## 中英文切换
+
+**入口**：启动器右上角「中文 / English」胶囊按钮 · 游戏内「⚙ 设置 → 语言 / Language」。
+两处共用同一个选择（启动器选的英文，进游戏就是英文），落盘后下次启动直接生效。
+
+| 事项 | 做法 |
+|---|---|
+| 存哪 | `hmzq.lang.v1`；Electron 走 `window.__electron.settings`（`file://` 下 localStorage 不可靠），网页走 localStorage |
+| 词表 | `public/i18n-en.js`：`HMZQ_EN`（精确条目）+ `HMZQ_EN_RULES`（正则规则，`$1/$2` 捕获组，管 `玩家2 胜` / `余3次` / `20分` 这类带变量的文案） |
+| 运行时 | `public/i18n.js`，启动器与游戏页各 `<script>` 引一次（静态页不能 `import src/`，同 `history.js` 的思路） |
+| 翻译谁 | 文本节点（归一化空白后查表）+ `title` / `placeholder` / `alt` / `aria-label` 四个属性 + `<html lang>` / `document.title` |
+
+**为什么按「中文原文」查表，而不是 key 表**：全项目 400+ 条文案散在 HTML 与十几个 JS 里，
+给每处加 key（`t('settings.minPower')`）要改几百个调用点，改漏一处就漏一处中文；
+按原文查只要维护一份 中文 → 英文 对照表，JS 照旧往 DOM 里写中文，翻译由运行时统一接管。
+
+三条实现上必须守住的约束（都踩过）：
+
+1. **不能拿 `innerHTML` 整块替换带交互的元素** —— 会把已绑好的事件监听换掉。
+   整块替换只对「纯排版标签」（`b/i/em/strong/kbd/code/br/span/small/sup/sub/wbr/u/s`）且子节点无属性的元素生效，遇到 `button` / `input` 一律下沉到子节点逐段翻。
+2. **译文必须能还原**：原文记在 `nodes` 台账里，切回中文时只还原「当前值 === 我们写进去的那串」的节点，被业务代码改过的不动
+   （`translateText` 与属性记的是真正写进 DOM 的 `out`，不是词表里的 `en` —— 带缩进的文本节点写回去时前后有空白，拿 `en` 比永远不相等）。切回中文**不能再 walk 一遍**：`translateText` 不看当前语言，一 walk 就把刚还原的中文又翻回英文。
+3. **自己写的译文不能再触发翻译**：靠「当前值 === 记录里的译文」判定，不用抑制标志（标志在异步 `MutationObserver` 下有竞争）。
+
+后续 DOM 变化由 `MutationObserver` 自动接管（`childList` + `characterData` + 四个属性），只在英文模式启用，
+所以 JS 拼出来的、「每帧重写」的文案（蓄力百分比、电脑瞄准提示）不用改代码也不会漏。
+
+⚠️ **`public/` 下的文件原样下发、不经打包器**，语法必须保持 ES2019 以内（没有 `?.` / `??` / `||=`）；
+`npm run check:syntax` 已经把 `public/*.js` 纳入解析校验（以前只查 `src/`，结果 i18n.js 的注释写坏导致整份文件语法错、
+页面里运行时根本没挂载，而所有检查全绿）。
+
+**验证分两层**（`npm run check:i18n`）：
+
+- `scripts/i18n-audit.mjs` 静态审计：把 HTML 里能翻的单元 + `src/` 与 `public/` 里含中文的字面量都过一遍词表，
+  缺英文条目就红（当前：HTML 245 单元 0 缺，JS 199 条字面量 0 缺，另有 69 条 innerHTML / 模板碎片交给运行时规则接住）。
+- `test/browser-i18n.mjs` 端到端：真 Chrome 打开两个页面，TreeWalker 扫**全部**文本节点（含隐藏页），
+  切到英文后不许再有汉字（兜住运行时拼串）；再点回中文，验证**还原**而不是单向替换。
+  顺带断言帮助弹窗没有横向溢出（它以前是多列布局，内容装不下时浏览器会往右排「溢出列」，后几段跑到屏幕外）。
 
 ## 音效
 

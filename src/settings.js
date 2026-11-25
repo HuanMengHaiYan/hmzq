@@ -53,7 +53,12 @@ export function wireGameUI({ state, audio, onMode, onResetView, onRestart, onBac
 
   // 玩法规则是启动器的「游戏设置 → 规则设置」项：这里只读展示，免得两处改法不一致
   const set = getBallSet(state.ballSet);
-  if (ballNote) ballNote.textContent = `玩法规则：${set.name}（${set.sub}）· 在启动器的「游戏设置 → 规则设置」里更改`;
+  // innerHTML + <b>/<i>：把球组名 / 副名拆成独立文本节点，英文模式下 i18n
+  // 能逐段查表（整句一条会连变量一起留下中文，见 i18n-en.js 的拆段条目）。
+  if (ballNote) {
+    ballNote.innerHTML =
+      `玩法规则：<b>${set.name}</b>（<i>${set.sub}</i>）· 在启动器的「游戏设置 → 规则设置」里更改`;
+  }
 
   // 锁定：三个模式按钮禁用，只把当前模式标出来
   if (state.modeLocked) {
@@ -114,6 +119,23 @@ export function wireGameUI({ state, audio, onMode, onResetView, onRestart, onBac
     });
   }
   syncGhost();
+
+  // ---------- 语言（中文 / English）----------
+  // 只负责把选择交给 i18n 运行时：翻译、落盘、通知都在 public/i18n.js 里，
+  // 启动器用的是同一份实现与同一个存储键，所以两边永远同步。
+  const langBtns = host.queryAll('#set-lang [data-lang]');
+  const syncLang = () => {
+    const cur = globalThis.HMZQ_I18N ? globalThis.HMZQ_I18N.getLang() : 'zh';
+    for (const el of langBtns) el.classList.toggle('active', el.getAttribute('data-lang') === cur);
+  };
+  for (const el of langBtns) {
+    host.on(el, 'click', () => {
+      globalThis.HMZQ_I18N?.setLang(el.getAttribute('data-lang'));
+      syncLang();
+    });
+  }
+  syncLang();
+  globalThis.HMZQ_I18N?.onChange(syncLang);
 
   // ---------- 声音：音效 / 背景音乐音量 + 曲目 ----------
   // 与启动器共用同一份设置（同一个 storage key），两边改动互相同步。

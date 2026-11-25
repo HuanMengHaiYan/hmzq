@@ -233,6 +233,10 @@
       window.__showError('Promise: ' + ((r && r.message) || String(r)), '');
     });
   </script>
+  <!-- 中英文切换：词表先加载，运行时随后（运行时在解析到它的那一刻就会去读词表）。
+       两份页面各引一次，实现只有一份 —— 见 public/i18n.js 顶部的说明。 -->
+  <script src="i18n-en.js"></script>
+  <script src="i18n.js"></script>
 </head>
 <body>
   <div id="app"></div>
@@ -381,6 +385,16 @@
       <p class="card-note">选一档即可；想自己抠细节就选「自定义」，下面会展开阴影精度 / 渲染分辨率 / 贴图精度 / 纹理细节。上面那行是当前实际取值。</p>
 
       <p class="card-note" id="set-ballset">玩法规则：中式黑八 · 在启动器的「游戏设置 → 规则设置」里更改</p>
+
+      <!-- 语言：data-i18n-skip 让「中文 / English」两个按钮自己不被翻译（两种语言下都显示本名） -->
+      <div class="settings-row">
+        <label>语言 / Language</label>
+        <div class="mode-grid" id="set-lang" data-i18n-skip>
+          <button data-lang="zh" type="button">中文</button>
+          <button data-lang="en" type="button">English</button>
+        </div>
+        <p class="hint">切换界面语言，立刻生效并记住；启动器与游戏共用同一个选择。</p>
+      </div>
 
       <button class="settings-close" id="settings-close">完 成</button>
     </div>

@@ -202,9 +202,9 @@ html[data-mobile="1"] .slider-row input[type=range] { height: 30px; }
 html[data-mobile="1"] .settings-close { padding: 14px 0; }
 html[data-mobile="1"] .menu-back { padding: 12px 0; }
 
-/* ---------- 帮助：手机上强制单列 ---------- */
+/* ---------- 帮助：手机上强制单列（列布局见 style.css，用的是 grid） ---------- */
 html[data-mobile="1"] .help-body {
-  columns: 1;
+  grid-template-columns: minmax(0, 1fr);
   padding: 18px clamp(14px, 4vw, 32px) 40px;
 }
 html[data-mobile="1"] .help-head { padding: 14px clamp(14px, 4vw, 32px); }

@@ -12,7 +12,7 @@
 | 开发 | `npm run build` | 浏览器构建 → `dist/`（语法降到 ES2019，手机 / 老内核能跑） |
 | 开发 | `npm run preview` | 把已有的 `dist/` 起成本地服务（:5184），**不开构建** |
 | 开发 | `npm run preview:lan` | 构建 + 起服务（:5184，监听 0.0.0.0），**手机实测用这条** |
-| 测试 | `npm test` | 无头物理/逻辑 **674 项** + 渲染层 **31 项**，0 失败才算过 |
+| 测试 | `npm test` | 无头物理/逻辑 **719 项** + 渲染层 **31 项**，0 失败才算过 |
 | 测试 | `npm run check` | 语法底线 + 内核自检卡 + 运行时 API，三道离线护栏一起跑 |
 | 测试 | `npm run check:syntax` | 只验产物语法 ≤ ES2019（**先 build**） |
 | 测试 | `npm run check:kernel` | 只验「浏览器内核过旧」自检卡在 9 种模拟内核下该不该弹 |
@@ -20,6 +20,7 @@
 | 测试 | `npm run check:smoke` | 无头 Chrome 真开一次 `dist/`（能跑起来 / 无报错 / 有帧率） |
 | 测试 | `npm run check:file` | 无头 Chrome + CDP 以 **file://** 打开 `dist-electron/`（与 Electron 同一条加载路径），验证 IIFE 产物在 `file://` 下可用 —— **Electron 窗口自检（HMZQ_SMOKE）起不来时的替代**（详见 `test/browser-file.mjs` 头注释） |
 | 测试 | `npm run check:solo` | 无头 Chrome 走完 **15 段**端到端（启动器 → 摆球 → 结算 → 画质 → 移动端 → 本地双人（含定组后半透明）→ 玩法规则 → 🤖 人机对战） |
+| 测试 | `npm run check:i18n` | 中英文切换：静态词表覆盖审计 + 无头 Chrome 切英文扫残留汉字、再切回中文验还原（**先 build**） |
 | Android | `npm run android:apk` | 打 **release** APK（需 `E:/android-tools` + `android/keystore.properties`） |
 | Android | `npm run android:apk:debug` | 打 **debug** APK（不需要签名文件） |
 | Android | `npm run apk:check` | 装机前核验：签名有效 + 包里 `index.html` 就是刚构建的 `dist` |
@@ -94,6 +95,13 @@
   > ⚠️ [1]~[11] 会把环境**钉成桌面**（`maxTouchPoints=0`）—— 否则无头 Chrome 被判成触摸设备，
   > 鼠标分支根本测不到；[12] 反过来开触摸模拟走手机分支。
   需要先 build。截图落在 `%TEMP%/hmzq-solo/`。
+
+- **`npm run check:i18n`** → `node scripts/i18n-audit.mjs && node test/browser-i18n.mjs`
+  两层。① 静态审计：把 `index.html` / `launcher.html` 里能翻的单元 + `src/` 与 `public/` 里含中文的字面量
+  逐条过词表，缺英文条目就退出码 1（碎片类（拼 innerHTML 的、模板字符串的）只提示，运行时由规则接住）；
+  ② 端到端：真 Chrome 打开启动器与游戏，切英文后用 TreeWalker 扫**全部**文本节点（隐藏页也扫），
+  一个汉字都不许剩；再点回中文，验证**还原**（不是单向替换）。顺带断言帮助弹窗没有横向溢出。
+  三张对照图落在 `docs/i18n-shots/`。需要先 build。
 
 ### Android
 

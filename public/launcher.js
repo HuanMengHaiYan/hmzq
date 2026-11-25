@@ -486,10 +486,12 @@
     });
     var cur = BALL_SETS.filter(function (s) { return s.id === prefs.balls; })[0] || BALL_SETS[0];
     ballsHint.textContent = cur.desc;
+    // 值各自包一层 <span>：拆成独立文本节点，英文模式下 i18n 才能逐段查表
+    // （整句一条规则会连变量一起留下中文）。
     ballsMeta.innerHTML = [
-      '<li><b>球数</b>：' + cur.count + ' 颗目标球（另加白球）</li>',
-      '<li><b>摆法</b>：' + cur.shape + '</li>',
-      '<li><b>说明</b>：' + cur.sub + ' · ' + cur.desc + '</li>',
+      '<li><b>球数</b>：<span>' + cur.count + ' 颗目标球（另加白球）</span></li>',
+      '<li><b>摆法</b>：<span>' + cur.shape + '</span></li>',
+      '<li><b>说明</b>：<span>' + cur.sub + '</span> · <span>' + cur.desc + '</span></li>',
     ].join('');
   }
 
@@ -748,6 +750,33 @@
   })();
 
   syncBack();
+
+  /* ---------------- 语言切换 ----------------
+     按钮只做一件事：把选择交给 HMZQ_I18N —— 翻译 DOM、记住选择、通知订阅方都由它负责。
+     按钮自己带 data-i18n-skip，所以「中文 / English」在两种语言下都显示本名。 */
+  var langBtns = Array.prototype.slice.call(document.querySelectorAll('#lang-sw button'));
+
+  function syncLang() {
+    if (!window.HMZQ_I18N) return;
+    var cur = window.HMZQ_I18N.getLang();
+    langBtns.forEach(function (b) {
+      var on = b.getAttribute('data-lang') === cur;
+      b.classList.toggle('on', on);
+      b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+    syncBack();                     // 返回键文案取自当前页标题，语言变了要重新取一次
+  }
+
+  if (window.HMZQ_I18N) {
+    langBtns.forEach(function (b) {
+      b.addEventListener('click', function () {
+        window.HMZQ_I18N.setLang(b.getAttribute('data-lang'));
+        b.blur();
+      });
+    });
+    window.HMZQ_I18N.onChange(syncLang);
+    syncLang();
+  }
 
   /* ---------------- 键盘导航 ---------------- */
   window.addEventListener('keydown', function (e) {

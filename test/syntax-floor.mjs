@@ -118,6 +118,14 @@ function checkSources() {
       else if (e.name.endsWith('.js')) srcFiles.push(p);
     }
   })('src');
+  /* public/ 下的经典脚本（i18n.js / history.js / launcher.js …）原样下发、不经打包器，
+     同样不该写坏。它们也在 targets() 的版本底线里，但那条要 dist 存在才跑：
+     没有 dist 时 targets() 直接 exit(0)，源码级语法错误就被漏过去了。
+     2026-11-25 踩过 —— i18n.js 的块注释里写了 "data- 星号 斜杠 on"，斜杠星号把注释提前收尾，
+     整份文件语法错，页面里 HMZQ_I18N 直接 undefined，而当时所有检查全绿。 */
+  if (existsSync('public')) {
+    for (const f of readdirSync('public')) if (f.endsWith('.js')) srcFiles.push(join('public', f));
+  }
 
   let bad = 0;
   for (const f of srcFiles) {
@@ -138,7 +146,7 @@ function checkSources() {
     console.log('源码写坏了：dev 模式（源码直出）会直接红框，构建也会失败。');
     process.exit(1);
   }
-  console.log(`===== 源码解析校验：src/ 下 ${srcFiles.length} 个文件全部可解析 =====`);
+  console.log(`===== 源码解析校验：src/ + public/ 共 ${srcFiles.length} 个文件全部可解析 =====`);
 }
 
 checkSources();
