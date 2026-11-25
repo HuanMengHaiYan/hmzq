@@ -68,8 +68,12 @@ The browser checks need a prior `npx vite build` — they test `dist/`.
 | Help | the <kbd>?</kbd> button, bottom left |
 | Ball in hand | drag the cue ball anywhere legal |
 
+| Set the contact point | drag the red dot on the cue-ball pad (bottom left, appears while charging) |
+| Recentre the contact point | double-click the pad |
+
 On phones and tablets: one finger orbits, two fingers pan or pinch-zoom, and a dedicated **Break / Shoot**
 button at the bottom right charges while you hold it (a large power bar rises from the bottom edge).
+While charging, drag the red dot on the pad with a second finger to apply spin.
 
 ## Game modes
 
@@ -80,6 +84,39 @@ button at the bottom right charges while you hold it (a large power bar rises fr
 - **vs Computer** — Chinese 8-ball rules, the computer plays player 2, thinks → turns the cue → shoots on its own,
   and announces which ball it is going for and with how much power.
 - **Online** — planned (a separate server project); the card in the launcher is disabled for now.
+
+## Spin (`src/spin.js` + `SHOT.spin`)
+
+Hold the shoot button and a **cue-ball pad** fades in at the bottom left. The red dot on it is the
+**contact point** — centre by default, which reproduces the old shot bit for bit.
+
+| Drag to | Normalised | Result |
+|---|---|---|
+| centre | (0, 0) | plain centre-ball hit — identical to the pre-0.8 shot (long-table calibration untouched) |
+| top | (0, +1) | **follow**: the cue ball keeps rolling forward (roll factor 0.6 → 0.8) |
+| bottom | (0, −1) | **draw**: it comes back (roll factor → −0.95, genuine backspin) |
+| left / right | (∓1, 0) | **side spin**: cushion rebound angle shifts up to ±15° and object balls get thrown off line |
+| diagonal | (x, y) | both at once (the length is clamped to 1) |
+
+`spinAngular()` (in `sim.js`, pure maths) turns the offset into angular velocity:
+
+```js
+ω_roll = (v/R) · roll,   roll = 0.6 + (sy >= 0 ? 0.2 : 1.55) · sy
+ω_y    = clamp(sideGain · sx · v/R, ±24)
+```
+
+The up/down gains are **deliberately asymmetric**: the cloth friction model does not respond to over-spin at
+all (roll 0.8 / 1.0 / 2.15 all travel the same +0.45 m), so follow tops out at 0.8 while draw needs −0.95 to
+actually pull the cue ball back.
+
+Cushion english is applied by hand (`applyCushionEnglish()`): Rapier's contact friction only turns a
+perpendicular rebound by **1.4°** at ω.y = 24, so the outgoing velocity is rotated by
+`θ = clamp(0.6·|ω.y|, ±15°)` **and** the rolling spin is rebuilt along the new direction — rotating only the
+velocity leaves the ball slipping and the cloth drags it straight again within 4 cm (measured: 3.6 cm of
+lateral drift instead of 6.8 cm).
+
+The computer always shoots from dead centre (`{ x: 0, y: 0 }`): the four AI levels were calibrated on
+centre-ball shots, and letting it apply spin would invalidate every pot-rate number.
 
 ## Language switching (i18n)
 

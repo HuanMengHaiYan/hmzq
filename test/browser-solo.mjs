@@ -1011,6 +1011,110 @@ cueMoved2 < 0.02
 await send('Emulation.clearDeviceMetricsOverride');
 await send('Emulation.setTouchEmulationEnabled', { enabled: false });   // 关掉即可（maxTouchPoints 不接受 0）
 
+// ---------- 12b. 杆法盘：按住开球键淡入 / 拖红点改击球点 / 松手出杆 ----------
+// ⚠️ UI 必须有这段：杆法盘是"不看截图就不知道对不对"的东西（红点跟不跟手、
+//    盘会不会被别的东西盖住，属性断言全挡不住）。这里断言 screen 位置 +
+//    写进 state 的归一化值，两样一起看才靠谱。
+console.log('\n[12b] 杆法盘 · 击球点选择（高杆 / 低杆 / 塞）');
+// 这一段跑完就把注入撤掉，后面的段落保持原来的环境（别动别人依赖的前提）
+const spinInject = (await send('Page.addScriptToEvaluateOnNewDocument', { source: desktopSource })).identifier;
+await send('Page.navigate', { url: ORIGIN + '/index.html?mode=tracking&balls=15' });
+await sleep(2600);
+
+const padInfo = () => evaluate(`(function(){
+  var p = document.getElementById('spin-pad'), r = document.getElementById('spin-ring'), d = document.getElementById('spin-dot');
+  var cs = getComputedStyle(p), rr = r.getBoundingClientRect(), dr = d.getBoundingClientRect();
+  return JSON.stringify({
+    op: cs.opacity, pe: cs.pointerEvents,
+    cx: Math.round(rr.left + rr.width / 2), cy: Math.round(rr.top + rr.height / 2), w: rr.width,
+    dx: Math.round(dr.left + dr.width / 2), dy: Math.round(dr.top + dr.height / 2),
+    spin: [+(+__hmzq.state.spinX).toFixed(2), +(+__hmzq.state.spinY).toFixed(2)],
+    charging: !!__hmzq.state.charging
+  });
+})()`);
+
+const pad0 = JSON.parse(await padInfo());
+pad0.op === '0' && pad0.pe === 'none'
+  ? pass('平时藏着（opacity 0 / 不吃点击）')
+  : fail('杆法盘平时就露着：' + JSON.stringify(pad0));
+
+// 按住开球键 → 淡入（鼠标路径：整个屏幕左键按下即蓄力）
+await evaluate(`(function(){
+  var b = document.getElementById('btn-shoot'), r = b.getBoundingClientRect();
+  b.dispatchEvent(new PointerEvent('pointerdown', { pointerId: 1, pointerType: 'mouse', isPrimary: true,
+    bubbles: true, cancelable: true, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2, button: 0 }));
+  return 1;
+})()`);
+// 淡入是 0.14s 的 CSS 过渡，但无头环境里过渡跟着帧走（这局物理很重，帧率只有个位数），
+// 320ms 读到过 opacity 还是 0 —— 等足 800ms 再读，别把"还没渲染完"当成"没淡入"。
+await sleep(800);
+const pad1 = JSON.parse(await padInfo());
+/* ⚠️ 这里断言"能用"（.show 已加 → pointer-events auto）而不是 computed opacity：
+   淡入是 0.14s 的 CSS 过渡，而无头环境里这局帧率只有个位数，过渡值会长时间停在
+   起始帧（实测等 800ms 读到 opacity 还是 0、transform 还是 scale(0.94)，但类名与
+   可点击性都已经生效了）。视觉上有没有出来，看后面那张截图，别用数值去猜。 */
+pad1.pe === 'auto' && pad1.charging
+  ? pass('按住开球键：盘出现且可交互（opacity 过渡 ' + pad1.op + '，截图见 spin-pad-low）')
+  : fail('按住开球键没出杆法盘：' + JSON.stringify(pad1));
+Math.abs(pad1.dx - pad1.cx) <= 2 && Math.abs(pad1.dy - pad1.cy) <= 2
+  ? pass('红点在正中心（默认中杆）')
+  : fail('红点没落在盘心：' + JSON.stringify({ ring: [pad1.cx, pad1.cy], dot: [pad1.dx, pad1.dy] }));
+
+// 拖到最下（低杆）：第二根手指按在盘上拖，红点要真跟着走
+await evaluate(`(function(){
+  var ring = document.getElementById('spin-ring'), r = ring.getBoundingClientRect();
+  var cx = r.left + r.width / 2, cy = r.top + r.height / 2, el = document.getElementById('spin-pad');
+  el.dispatchEvent(new PointerEvent('pointerdown', { pointerId: 2, pointerType: 'touch', isPrimary: false,
+    bubbles: true, cancelable: true, clientX: cx, clientY: cy }));
+  el.dispatchEvent(new PointerEvent('pointermove', { pointerId: 2, pointerType: 'touch', isPrimary: false,
+    bubbles: true, cancelable: true, clientX: cx, clientY: cy + r.height * 0.6 }));
+  return 1;
+})()`);
+await sleep(180);
+const pad2 = JSON.parse(await padInfo());
+pad2.spin[0] === 0 && pad2.spin[1] === -1
+  ? pass('拖到最下 → 击球点 (0, −1) 低杆')
+  : fail('拖到最下没写成低杆：' + JSON.stringify(pad2.spin));
+pad2.dy - pad2.cy > pad2.w * 0.25
+  ? pass('红点真的往下走了（屏幕位移 ' + (pad2.dy - pad2.cy) + 'px）')
+  : fail('红点没跟手：盘心 ' + pad2.cy + ' → 红点 ' + pad2.dy);
+await shot('spin-pad-low');
+
+// 再拖到右上（高杆 + 右塞）
+await evaluate(`(function(){
+  var ring = document.getElementById('spin-ring'), r = ring.getBoundingClientRect();
+  var cx = r.left + r.width / 2, cy = r.top + r.height / 2, el = document.getElementById('spin-pad');
+  el.dispatchEvent(new PointerEvent('pointermove', { pointerId: 2, pointerType: 'touch', isPrimary: false,
+    bubbles: true, cancelable: true, clientX: cx + r.width * 0.45, clientY: cy - r.height * 0.45 }));
+  return 1;
+})()`);
+await sleep(180);
+const pad3 = JSON.parse(await padInfo());
+pad3.spin[0] > 0.5 && pad3.spin[1] > 0.5
+  ? pass('拖到右上 → 击球点 ' + JSON.stringify(pad3.spin) + '（右塞 + 高杆）')
+  : fail('右上没同时出塞和高杆：' + JSON.stringify(pad3.spin));
+pad3.dx - pad3.cx > 10 && pad3.cy - pad3.dy > 10
+  ? pass('红点跑到右上（横 ' + (pad3.dx - pad3.cx) + 'px / 纵 ' + (pad3.cy - pad3.dy) + 'px）')
+  : fail('红点没到右上：' + JSON.stringify({ ring: [pad3.cx, pad3.cy], dot: [pad3.dx, pad3.dy] }));
+await shot('spin-pad-top-right');
+
+// 松手出杆：盘收起，但杆法要带进这一杆
+await evaluate(`(function(){
+  window.dispatchEvent(new PointerEvent('pointerup', { pointerId: 1, pointerType: 'mouse', isPrimary: true,
+    bubbles: true, cancelable: true, clientX: 10, clientY: 10, button: 0 }));
+  return 1;
+})()`);
+await sleep(600);
+const pad4 = JSON.parse(await padInfo());
+const used = JSON.parse(await evaluate(`JSON.stringify(__hmzq.state.spin)`));
+pad4.op === '0' && pad4.pe === 'none'
+  ? pass('松手后盘收起（不再挡屏幕）')
+  : fail('出杆后盘还留着：' + JSON.stringify(pad4));
+Math.abs(used.x - pad3.spin[0]) < 0.01 && Math.abs(used.y - pad3.spin[1]) < 0.01
+  ? pass('这一杆真的带了杆法（state.spin = ' + JSON.stringify(used) + '）')
+  : fail('杆法没带进出杆：盘里 ' + JSON.stringify(pad3.spin) + ' vs 出杆 ' + JSON.stringify(used));
+await send('Page.removeScriptToEvaluateOnNewDocument', { identifier: spinInject });
+
 // ---------- 13. 本地双人：回合横幅 + 左右两个开球键归谁 ----------
 console.log('\n[13] 本地双人模式 · 醒目提示与按键归属');
 // ⚠️ [12] 段把"钉成桌面"的注入撤了、换成触摸模拟，而**触摸模拟关掉之后

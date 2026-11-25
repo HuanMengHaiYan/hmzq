@@ -58,6 +58,9 @@ export function createState() {
     charging: false,
     chargeT: 0,
     chargePower: 0,           // 0~1 当前蓄力值
+    spinX: 0,                 // 杆法盘：击球点横向偏移 −1~1（+右塞 / −左塞），由 spin.js 写
+    spinY: 0,                 // 杆法盘：击球点纵向偏移 −1~1（+高杆 / −低杆）
+    spin: { x: 0, y: 0 },     // 上一杆实际用的击球点（shot.js 出杆时写入，HUD / 测试看）
     aimAngle: 0,              // 击球方向方位角（弧度），方向向量 = (sin,0,cos)
     camBack: CAM.aimDist,     // 追踪模式瞄准时相机水平距离
     cueAnim: 0,               // 击球动画进度 0~1
@@ -103,6 +106,9 @@ export function resetMatch(state) {
   state.aimSeen = state.aimAngle;
   state.aimAcc = 0;
   state.aimCount = 0;
+  state.spinX = 0;                  // 重开一局：杆法回到中心
+  state.spinY = 0;
+  state.spin = { x: 0, y: 0 };
 }
 
 /**

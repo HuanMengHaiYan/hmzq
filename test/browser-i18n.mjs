@@ -169,7 +169,7 @@ const setLang = (l) => evaluate(`localStorage.setItem('hmzq.lang.v1','${l}'); 1`
 console.log(`\n===== 中英文切换 · 端到端（${HEADFUL ? '有头' : '无头'} Chrome）=====`);
 
 /* ---------------- ① 启动器 · 英文 ---------------- */
-console.log('\n[1/4] 启动器 · English');
+console.log('\n[1/6] 启动器 · English');
 await send('Page.navigate', { url: ORIGIN + '/launcher.html' });
 await sleep(400);
 await setLang('en');
@@ -198,7 +198,7 @@ for (const route of ['start/solo', 'start/ai', 'fun', 'history', 'settings', 'se
 await scan('启动器 · 逛完全部子页');
 
 /* ---------------- ② 启动器 · 切回中文 ---------------- */
-console.log('\n[2/4] 启动器 · 点回中文');
+console.log('\n[2/6] 启动器 · 点回中文');
 await evaluate(`document.querySelector('#lang-sw [data-lang="zh"]').click(); 1`);
 await sleep(500);
 const Z = JSON.parse(await evaluate(`JSON.stringify({
@@ -210,8 +210,31 @@ if (Z.lang !== 'zh-CN') fail(`<html lang> 没回 zh-CN（${Z.lang}）`); else pa
 if (Z.menu[0] !== '常规模式') fail(`菜单没还原成中文：${Z.menu.join(' / ')}`); else pass(`菜单已还原：${Z.menu.join(' / ')}`);
 if (Z.saved !== 'zh') fail(`语言选择没落盘（${Z.saved}）`); else pass('语言选择已落盘');
 
-/* ---------------- ③ 游戏 · 英文 ---------------- */
-console.log('\n[3/4] 游戏 · English');
+/* ---------------- ③ 启动器 · 实时切英文（不刷新页面） ---------------- */
+/* ⚠️ 这一步是补的护栏：以前 setLang('en') 只清台账、不重新翻译，界面会一直停在中文
+   直到刷新 —— 而上面两步都靠 reload，所以这个 bug 一直没被测出来
+   （暴露它的是杆法盘标题：切英文后仍写着「击球点」）。
+   这里**不刷新**，直接点按钮，然后扫全页汉字。 */
+console.log('\n[3/6] 启动器 · 点击实时切英文（不重新加载）');
+await evaluate(`document.querySelector('#lang-sw [data-lang="en"]').click(); 1`);
+await sleep(600);
+const LE = JSON.parse(await evaluate(`JSON.stringify({
+  lang: document.documentElement.lang,
+  menu: Array.prototype.map.call(document.querySelectorAll('.mi span'), function(b){return b.textContent;}),
+  saved: localStorage.getItem('hmzq.lang.v1')
+})`));
+if (LE.lang !== 'en') fail(`实时切换后 <html lang> 没变成 en（${LE.lang}）`); else pass('实时切换：<html lang="en">');
+if (/[\u4e00-\u9fff]/.test(LE.menu.join(''))) fail(`实时切换后菜单还是中文：${LE.menu.join(' / ')}`); else pass(`实时切换后菜单已变英文：${LE.menu.slice(0, 3).join(' / ')}`);
+await scan('启动器 · 实时切换后');
+await evaluate(`document.querySelector('#lang-sw [data-lang="zh"]').click(); 1`);
+await sleep(500);
+const LB = JSON.parse(await evaluate(`JSON.stringify({
+  menu: Array.prototype.map.call(document.querySelectorAll('.mi span'), function(b){return b.textContent;})
+})`));
+if (LB.menu[0] !== '常规模式') fail(`实时切回中文失败（台账被抹了？）：${LB.menu.join(' / ')}`); else pass('实时切回中文：菜单还原正常');
+
+/* ---------------- ④ 游戏 · 英文 ---------------- */
+console.log('\n[4/6] 游戏 · English');
 await setLang('en');
 const GAME = ORIGIN + '/index.html?mode=free&balls=15&lock=1&min=0.05&max=1.20&from=launcher';
 await visit(GAME, `parseFloat((document.getElementById('v-fps')||{}).textContent) > 0`, 900);
@@ -275,7 +298,7 @@ await sleep(1600);
 await scan('游戏 · 出杆后');
 
 /* ---------------- ④ 游戏 · 切回中文 ---------------- */
-console.log('\n[4/4] 游戏 · 设置里点回中文');
+console.log('\n[5/6] 游戏 · 设置里点回中文');
 await evaluate(`document.getElementById('btn-settings').click(); 1`);
 await sleep(220);
 await evaluate(`document.querySelector('#set-lang [data-lang="zh"]').click(); 1`);
@@ -294,6 +317,24 @@ if (!/[\u4e00-\u9fff]/.test(GZ.state) || /[A-Za-z]{2,}/.test(GZ.state)) {
   pass(`游戏内已还原中文（状态「${GZ.state}」，开球键「${GZ.shoot}」）`);
 }
 if (GZ.saved !== 'zh') fail(`语言选择没落盘（${GZ.saved}）`); else pass('游戏内切换也落盘了');
+
+/* ---------------- ⑥ 游戏 · 实时切英文（不刷新页面） ---------------- */
+console.log('\n[6/6] 游戏 · 点击实时切英文（不重新加载）');
+await evaluate(`document.querySelector('#set-lang [data-lang="en"]').click(); 1`);
+await sleep(700);
+const GE = JSON.parse(await evaluate(`JSON.stringify({
+  lang: document.documentElement.lang,
+  shoot: (document.getElementById('btn-shoot')||{}).textContent,
+  cap: (document.getElementById('spin-cap')||{}).textContent,
+  saved: localStorage.getItem('hmzq.lang.v1')
+})`));
+if (GE.lang !== 'en') fail(`实时切换后 <html lang> 没变成 en（${GE.lang}）`); else pass('实时切换：<html lang="en">');
+if (GE.shoot !== 'Break') fail(`开球键没跟着翻（${GE.shoot}）`); else pass(`开球键已变英文（${GE.shoot}）`);
+// 杆法盘那行小字（它就在一开始的 DOM 里，最先暴露"没重翻"这个问题）
+if (!/^[\x00-\x7F]+$/.test(GE.cap || '')) fail(`杆法盘标题没翻：${GE.cap}`); else pass(`杆法盘标题已变英文（${GE.cap}）`);
+await scan('游戏 · 实时切换后');
+await evaluate(`document.querySelector('#set-lang [data-lang="zh"]').click(); 1`);
+await sleep(500);
 
 /* ---------------- 收尾 ---------------- */
 ws.close();

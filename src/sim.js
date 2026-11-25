@@ -1,4 +1,96 @@
-import { PHYS, BREAK_SHOCK } from './constants.js';
+import { BALL_R, PHYS, BREAK_SHOCK, SHOT } from './constants.js';
+
+/**
+ * 库边加塞（english）：撞库的那一瞬间，球的侧旋把出射方向"带偏"。
+ * ------------------------------------------------------------------
+ * 为什么必须手工补：Rapier 的接触摩擦在这件事上给的份额太小 —— 实测 ω.y = 24 rad/s
+ * 正撞库边，反弹方向只偏 **1.4°**（真实台球这个量级的塞能偏十几度）。
+ * 原因：接触点滑移速度里，摩擦冲量按「平动 : 自转 = 1 : 2.5」分摊（球 I=2/5mR²），
+ * 大部分塞在接触瞬间被自己"吃掉"成角冲量，真正变成横向平移的只剩两成。
+ *
+ * 做法上特意**不去加横向速度、而是旋转出射速度**：
+ * 加横向速度等于让球"横着滑"，而台布摩擦（μ=0.24）0.2 秒就把它抹平了
+ * （实测加了 0.52 m/s 的横移，200ms 后只剩 0.1 m/s，看着只偏 3°）；
+ * 旋转方向则不改速度大小、不制造侧滑，球会老老实实按新方向滚出去。
+ *
+ * ⚠️ 只转速度是不够的（实测踩过两次）：
+ *    ① 不碰自转：球的自转轴还指着原方向，等于"球往新方向滑过去"，台布摩擦 4cm 内
+ *       就把速度拽回自转轴 —— 出射偏了 14.4°，整段轨迹最大横移只有 3.6cm；
+ *    ② 把自转一起转 θ：撞库后速度反了向、自转没反向（真实台球的"撞库后变回旋"），
+ *       球在打滑中被摩擦强行拧回原方向，横移反而只剩 1.4cm。
+ *    所以这里**按新出射方向重建滚动自转**：保持原来的"滚动倍数"（游戏中 0.6），
+ *    ω_h = k·(|v'|/R)·(dz', 0, −dx')。速度大小不变、|ω| 只会更小（反弹后速度已衰减），
+ *    既不凭空造能量，也不会打滑，球按新方向稳稳滚出去 —— 玩家才看得出"加了塞"。
+ *    ω.y（塞本身）原样保留，继续受 spinDecel 衰减。
+ *
+ * 方向依据（经典台球物理）：球向右带塞（ω.y > 0）正撞库边时，接触点表面速度是
+ * **往左**的（v = ω×r，r 指向库边），库边给的摩擦把它往右推 → 出射方向偏向右侧。
+ *
+ * ⚠️ 中心击球的 ω.y = 0 → 这个函数整体不参与，老手感（长台 / 开球标定）完全不动。
+ */
+export function applyCushionEnglish(ball) {
+  const cfg = SHOT.spin;
+  const av = ball.body.angvel();
+  if (Math.abs(av.y) < cfg.englishMinSpin) return false;
+  const lv = ball.body.linvel();
+  const spd = Math.hypot(lv.x, lv.z);
+  if (spd < 0.05) return false;                         // 还没真正弹出去，别转
+  const deg = clamp(-cfg.englishDeg * av.y, -cfg.maxEnglishDeg, cfg.maxEnglishDeg);
+  const th = (deg * Math.PI) / 180;
+  const cs = Math.cos(th), sn = Math.sin(th);
+  // 绕 y 轴转 θ：(x, z) → (x·cosθ + z·sinθ, −x·sinθ + z·cosθ)。速度大小不变。
+  const vx = lv.x * cs + lv.z * sn;
+  const vz = -lv.x * sn + lv.z * cs;
+  ball.body.setLinvel({ x: vx, y: lv.y, z: vz }, true);
+
+  // 滚动倍数 k = |ω_h|·R / |v|（游戏中恒 0.6；钳在 0~2 是防脏数据把球抽成陀螺）
+  const k = clamp((Math.hypot(av.x, av.z) * BALL_R) / spd, 0, 2);
+  ball.body.setAngvel({
+    x: (vz / BALL_R) * k,
+    y: av.y,
+    z: (-vx / BALL_R) * k,
+  }, true);
+  return true;
+}
+
+function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
+const clamp1 = (v) => clamp(Number(v) || 0, -1, 1);
+
+/**
+ * 击球点 → 初始角速度（纯函数，不碰 three / DOM，headless 测试直接验）。
+ * ------------------------------------------------------------------
+ * 玩家在杆法盘上拖出的偏移量 sx / sy（各自 −1~1）换算成"打在球面哪儿"，
+ * 再按 o×J/I 算出这一杆给白球的角速度：
+ *
+ *   滚动分量（ω.x / ω.z）：中心击球沿用 0.7.0 的 0.6 倍前旋（让球快速进入滚动段）；
+ *                          高杆 +rollGain、低杆 −rollGain —— 低到一定程度变成负值，
+ *                          就是"回旋球"（撞完目标球往回缩）。
+ *   塞（ω.y）            ：ω.y = sideGain · sx · (v/R)，撞库反弹角与撞球甩球全靠它。
+ *
+ * ⚠️ 只碰这三项，不要顺手去动 PHYS 的 spinDecel —— 那是 ω.y 的衰减率，
+ *    改它等于改"球停了还要等多久才能出下一杆"（见 constants.js 的 maxSideSpin 注释）。
+ * ⚠️ 放在 sim.js 而不是 shot.js：shot.js 会拉进 three（aimer/balls），
+ *    纯数学留在这里，headless 才不用为了验几个数去加载渲染层。
+ *
+ * @param dir  出杆方向单位向量 {x, z}（水平面）
+ * @param v    出杆后白球速度（m/s）= 冲量 / 质量
+ * @param spin {x, y} 归一化击球点（可省略 → 中心击球）
+ * @returns Rapier 的角速度对象 {x, y, z}
+ */
+export function spinAngular(dir, v, spin) {
+  const cfg = SHOT.spin;
+  const sx = clamp1(spin?.x ?? 0);
+  const sy = clamp1(spin?.y ?? 0);
+  // 纯滚动角速度（rad/s）：滚动自转 = v/R，方向见 shot.js 里那条符号说明
+  const rollOmega = v / BALL_R;
+  const roll = cfg.baseRoll + (sy >= 0 ? cfg.rollGainUp : cfg.rollGainDown) * sy;
+  const side = clamp(cfg.sideGain * sx * rollOmega, -cfg.maxSideSpin, cfg.maxSideSpin);
+  return {
+    x: dir.z * rollOmega * roll,
+    y: side,
+    z: -dir.x * rollOmega * roll,
+  };
+}
 
 /**
  * 碰撞传导随机化：让"球撞球 → 再把力度传给下一颗球"的过程带上随机浮动。
@@ -46,8 +138,11 @@ export function randomizeBallImpacts(events, byHandle, prevVel, opts = {}) {
     // 球撞静态体：只有库边值得出声（台布、袋筒、落球盘一路蹭过去会很吵）
     if (!b1 || !b2) {
       const ball = b1 || b2;
-      if (!onImpact || !ball || !cushions?.has(b1 ? h2 : h1)) return;
-      if (ball.potted || ball.hidden) return;
+      if (!ball || ball.potted || ball.hidden) return;
+      const isCushion = cushions ? cushions.has(b1 ? h2 : h1) : false;
+      // 库边加塞：与"要不要出声"无关，只要撞的是库边、球上带着塞就生效
+      if (isCushion) applyCushionEnglish(ball);
+      if (!onImpact || !isCushion) return;
       const v = prevVel.get(ball) || { x: 0, z: 0 };
       const speed = Math.hypot(v.x, v.z);
       if (speed < minSpeed) return;

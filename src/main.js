@@ -25,6 +25,7 @@ import { Stage } from './stage.js';
 import { CameraRig } from './camera-rig.js';
 import { Aimer, aimVector } from './aimer.js';
 import { Hud } from './hud.js';
+import { SpinPad } from './spin.js';
 import { PocketReferee } from './pockets.js';
 import {
   shoot, maybeBreakShock, updateRestState, snapshotVelocities, respawnCueIfIdle,
@@ -124,7 +125,7 @@ const _ballPos = new THREE.Vector3();
 const _dir = new THREE.Vector3();
 
 let world, eventQueue;
-let stage, rig, hud, aimer, referee, result, quality, confirmUI;
+let stage, rig, hud, spinPad, aimer, referee, result, quality, confirmUI;
 let balls = [], cue = null, sensors = [], ballBodies = [];
 let colliderToBall = new Map();
 let cushionHandles = new Set();   // 库边碰撞体句柄：区分"撞库"和"球撞球"
@@ -235,6 +236,7 @@ async function init() {
 
   // ---------- 子系统 ----------
   hud = new Hud();
+  spinPad = new SpinPad(state);           // 杆法盘（按住开球键才淡入，见 spin.js）
   confirmUI = createConfirm({ state });   // 会丢进度的操作（重开本局）先问一句
   aimer = new Aimer(stage.scene);
   rig = new CameraRig(stage, state, cue);
@@ -380,6 +382,7 @@ function beginCharge() {
   state.lockedAim = state.aimAngle;
   rig.lockAim();                    // 冻结机位（取消补间 + 吃掉阻尼惯性 + 关手势）
   hud.showCharge(pointer.x, pointer.y);
+  spinPad.show();                   // 杆法盘淡入：蓄力期间可以拖红点改击球点
 }
 
 function releaseCharge() {
@@ -389,16 +392,19 @@ function releaseCharge() {
   //   滑块下半段怎么调都没感觉 —— 现在最大值/最小值就是力度区间的两个端点。）
   state.charging = false;
   hud.hideCharge();
+  spinPad.hide();
   rig.enableControls();
-  fireShot(state.chargePower);
+  fireShot(state.chargePower, { x: state.spinX, y: state.spinY });
 }
 
-function fireShot(power) {
+function fireShot(power, spin) {
   // ⚠️ 只用蓄力瞬间锁定的方向（state.lockedAim），不读"此刻"的 aimAngle。
   // 这是"松开开球后白球方向突然变了"的根治点：出杆方向不再受蓄力期间的任何
   // 指针移动 / 相机旋转 / 惯性滑动影响。
+  // 杆法同理：玩家/电脑各自把击球点传进来，这里不读 state —— 免得电脑出杆时
+  // 继承了玩家上一杆拖出来的塞（电脑永远打中心点，它的命中率标定才站得住）。
   const angle = state.lockedAim;
-  if (!shoot({ state, cue, power, aimAngle: angle })) return;
+  if (!shoot({ state, cue, power, aimAngle: angle, spin })) return;
   duo?.beginShot();                            // 本地双人：本杆的落袋登记清零（见 duo.js）
   state.aimAngle = angle;                      // 与出杆方向对齐（观战/顶视期间可能已被改到别处）
   referee.openLids();                          // 每一杆开局：袋口恢复敞开
@@ -979,7 +985,7 @@ function aiFire() {
   state.lockedAim = p.aimAngle;
   state.aimAngle = p.aimAngle;
   const shotsBefore = state.shots;
-  fireShot(p.power);
+  fireShot(p.power, { x: 0, y: 0 });        // 电脑只打中心点（见 fireShot 的注释）
   if (state.shots === shotsBefore) return;      // 没打出去（极少见），就别报了
   showAutoTip(p.tip);
 }

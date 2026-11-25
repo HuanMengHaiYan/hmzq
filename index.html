@@ -256,6 +256,18 @@
 
   <div id="charge-pop"><i><b id="charge-fill"></b></i><span id="charge-pct">0%</span></div>
 
+  <!-- ---------- 杆法盘（击球点）----------
+       按住开球键时淡入，圆盘里的红点就是杆打在白球的哪个位置：
+       上 = 高杆、下 = 低杆（拉杆）、左/右 = 左塞 / 右塞，拖到盘边就是极限杆法。
+       位置固定在左下角 —— 右下角是开球键与蓄力条，两边分开才不会互相盖住。
+       交互与状态见 src/spin.js（多指安全：拖盘的可以是第二根手指，不会提前出杆）。 -->
+  <div id="spin-pad" aria-hidden="true">
+    <div id="spin-ring">
+      <b id="spin-dot"></b>
+    </div>
+    <span id="spin-cap">击球点</span>
+  </div>
+
   <!-- ---------- 开球键 + 显眼的大蓄力条 ----------
        桌面 / web 同样要显示（按住蓄力、松手出杆），不只是手机。 -->
   <div id="shoot-dock">

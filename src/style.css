@@ -466,6 +466,78 @@ body.duo #shoot-dock { bottom: calc(160px + var(--safe-b, 0px)); }
   color: #fff;
 }
 
+/* ---------- 杆法盘（击球点）----------
+   按住开球键时淡入（JS 加 .show），松手就淡出 —— 平时不占屏幕。
+   位置固定在左下角：右下角被开球键 + 蓄力条占着，两边分开才不会互相盖住。
+   ⚠️ 圆盘里那颗红点是**绝对定位在正中心 + translate(-50%,-50%)**，JS 再追加一段像素位移
+      （见 spin.js 的 render()）：不用 left/top 百分比是因为圆盘有 2px 边框，
+      百分比相对 padding box 算，换算会差几像素。 */
+#spin-pad {
+  position: fixed;
+  z-index: 26;
+  left: calc(16px + var(--safe-l));
+  bottom: calc(74px + var(--safe-b));
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(8px) scale(0.94);
+  transition: opacity 0.14s ease, transform 0.14s ease;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+#spin-pad.show { opacity: 1; pointer-events: auto; transform: none; }
+
+#spin-ring {
+  position: relative;
+  width: 84px;
+  height: 84px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 36% 30%, #ffffff 0%, #eef3f7 58%, #ccd6de 100%);
+  border: 2px solid rgba(255, 255, 255, 0.8);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.42), inset 0 0 0 1px rgba(20, 30, 40, 0.08);
+  cursor: grab;
+}
+#spin-ring:active { cursor: grabbing; }
+/* 十字准线：让人一眼看出"中心 = 中杆" */
+#spin-ring::before,
+#spin-ring::after {
+  content: "";
+  position: absolute;
+  background: rgba(30, 44, 56, 0.16);
+  pointer-events: none;
+}
+#spin-ring::before { left: 6%; right: 6%; top: 50%; height: 1px; }
+#spin-ring::after { top: 6%; bottom: 6%; left: 50%; width: 1px; }
+
+#spin-dot {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  border-radius: 50%;
+  background: #ff4d4f;
+  border: 2px solid #fff;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  /* ⚠️ 这里**不加** transition：红点是跟着手指走的，任何过渡都会让"落点"比手指慢半拍；
+     而且无头 Chrome 不推进 CSS 过渡，读数与截图都会拿到旧位置（排查时会误判成 render 没生效）。 */
+}
+
+#spin-cap {
+  font-size: 11px;
+  letter-spacing: 1px;
+  color: rgba(235, 242, 248, 0.72);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+}
+
 /* ---------- 设置弹窗 ---------- */
 #settings-modal {
   position: fixed;

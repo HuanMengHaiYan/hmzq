@@ -19,6 +19,9 @@ import {
 } from './suites/table-geometry.mjs';
 import { testImpactVariance, testBreakFan, testSpinFriction } from './suites/sim-units.mjs';
 import {
+  testSpinAngular, testSpinPhysics, testSpinCushion, testSpinSettle,
+} from './suites/spin.mjs';
+import {
   testBreaks, testBreakPots, testGuardNoDeadlock, testBreakAsymmetry,
 } from './suites/break-play.mjs';
 import { testPocketLidFuse } from './suites/deadlock-fuses.mjs';
@@ -69,6 +72,12 @@ testNormalPotting();
 testImpactVariance();
 testBreakFan();
 testSpinFriction();
+
+// ---- 🎱 杆法：击球点偏移 → 旋转球（高杆 / 低杆 / 左右塞）----
+testSpinAngular();
+testSpinPhysics();
+testSpinCushion();
+testSpinSettle();
 
 // ---- 音效：素材与连击播报（纯逻辑，不需要 Rapier） ----
 testAudioAssets();

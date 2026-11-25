@@ -1,32 +1,44 @@
 import { BALL_R, SHOT, PHYS } from './constants.js';
-import { applyBreakShock } from './sim.js';
+import { applyBreakShock, spinAngular } from './sim.js';
 import { respawnCue } from './balls.js';
 import { beginShot, endShot } from './state.js';
 import { aimVector } from './aimer.js';
 
+// 击球点 → 角速度的换算在 sim.js（纯数学，headless 测试要直接验它）；
+// 这里再导出一次，老调用点（以及文档里那句 `shot.js 的 spinAngular`）不必改。
+export { spinAngular };
+
+const clamp1 = (v) => {
+  const n = Number(v) || 0;              // undefined / NaN 都当中心击球
+  return n < -1 ? -1 : n > 1 ? 1 : n;
+};
+
 /**
  * 出杆：把蓄力值变成冲量，并把这一杆的状态登记好。
+ * @param spin 击球点偏移 {x, y}（省略 = 中心击球，AI 与老调用点都走这条）
  * @returns 是否真的出杆了（球还在动 / 白球进袋时出不了杆）
  */
-export function shoot({ state, cue, power, aimAngle }) {
+export function shoot({ state, cue, power, aimAngle, spin }) {
   if (state.shooting || cue.potted) return false;
 
   const dir = aimVector(aimAngle);
+  const sx = clamp1(spin?.x);
+  const sy = clamp1(spin?.y);
   const impulse = SHOT.minImpulse + (SHOT.maxImpulse - SHOT.minImpulse) * power;
 
   cue.body.wakeUp();
   cue.body.applyImpulse({ x: dir.x * impulse, y: 0, z: dir.z * impulse }, true);
 
-  // 前旋：让球更快从"滑动"过渡到"滚动"。
-  // 纯滚动条件（接触点瞬时速度为零）：ω = (v·dz/R, 0, −v·dx/R)。
-  // 之前符号写反了 —— 白球拿到的是"倒转"，一路上被台布摩擦死死拖住（实测 0.2 秒就掉 46% 速度）。
+  // 前旋 + 杆法：中心击球时与原行为完全一致（0.6 倍前旋），偏移由 spinAngular 换算。
+  // 纯滚动条件（接触点瞬时速度为零）：ω = (v·dz/R, 0, −v·dx/R)；
+  // 之前符号写反过 —— 白球拿到的是"倒转"，一路上被台布摩擦死死拖住（0.2 秒掉 46% 速度）。
   const v = impulse / cue.body.mass();
-  const roll = 0.6;
-  cue.body.setAngvel({ x: (dir.z * v * roll) / BALL_R, y: 0, z: (-dir.x * v * roll) / BALL_R }, true);
+  cue.body.setAngvel(spinAngular(dir, v, { x: sx, y: sy }), true);
 
   state.shooting = true;
   state.shots += 1;
   state.lastPower = power;
+  state.spin = { x: sx, y: sy };   // 记下这一杆的杆法（HUD / 测试看）
   state.cueAnim = 0.0001;          // 触发球杆击球动画
   beginShot(state, dir);
   return true;

@@ -90,16 +90,30 @@ export function bindShootButton({ state, canCharge, onStart, onEnd, btns, canUse
     for (const b of list) b.classList.toggle('disabled', !(ok && usable(b)));
   };
 
+  // 蓄力是哪一根手指按下来的（多指安全）：杆法盘要用**另一根手指**拖着调击球点，
+  // 那根手指松开时绝不能把这一杆打出去 —— 只认开球键这一根 pointerId。
+  let activeId = null;
+
   const down = (e) => {
     if (e.cancelable) e.preventDefault();      // 挡掉鼠标兼容事件 / 双指缩放
     if (state.uiBlocked || state.charging || !canCharge()) return;
     if (!usable(e.currentTarget)) return;      // 双人模式：不是你的回合，按了没反应
+    activeId = e.pointerId;
     for (const b of list) b.classList.add('pressed');
     onStart();
   };
   // 抬手挂在 window 上：按住后手指滑出按钮再松开，也要能正常出杆
-  const up = () => {
+  const up = (e) => {
     if (!state.charging) return;
+    // 别的指针抬手（比如另一根手指正在拖杆法盘）→ 与我无关。
+    // touchend 没有 pointerId，退回"屏幕上真的没有手指了"才算松手
+    // （pointerup 会先于 touchend 到达，所以正常松手在这一步就已经出杆了）。
+    if (e && typeof e.pointerId === 'number') {
+      if (activeId !== null && e.pointerId !== activeId) return;
+    } else if (e && e.touches && e.touches.length > 0) {
+      return;
+    }
+    activeId = null;
     for (const b of list) b.classList.remove('pressed');
     onEnd();
   };

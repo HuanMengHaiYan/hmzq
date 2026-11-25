@@ -287,6 +287,18 @@
     '手机 / 平板（触摸操作）': 'Phones / tablets (touch)',
     '开球与物理': 'The break and the physics',
     '界面与快捷键': 'Interface and hotkeys',
+    '击球点': 'Contact',                     // 杆法盘下面那行小字（位置窄，用短词）
+    '杆法（旋转球）': 'Spin (contact point)',
+    '<b>按住开球键</b>时左下角浮出<b>杆法盘</b>：盘里的红点就是<b>击球点</b>，默认在正中心（中杆，就是以前那种普通击球）':
+      '<b>Hold the shoot button</b> and the <b>cue-ball pad</b> fades in at the bottom left: the red dot is the <b>contact point</b>, centred by default (a plain centre-ball hit, exactly like before)',
+    '<b>怎么调</b>：手指<b>按住红点拖</b>（拖出圆盘也不会断）· 桌面按住开球键后<b>鼠标划过圆盘</b>即可 · 蓄力时按 <kbd>↑</kbd><kbd>↓</kbd><kbd>←</kbd><kbd>→</kbd> 微调 · <b>双击圆盘</b>回中':
+      '<b>How to aim it</b>: <b>drag the dot</b> with a finger (it keeps tracking even outside the pad) · on desktop, hold the shoot button and <b>move the mouse over the pad</b> · while charging, nudge it with <kbd>↑</kbd><kbd>↓</kbd><kbd>←</kbd><kbd>→</kbd> · <b>double-click the pad</b> to recentre',
+    '<b>往上 = 高杆</b>（跟进：撞完白球继续往前跑）· <b>往下 = 低杆</b>（回旋：撞完白球往回缩）· <b>左右 = 左 / 右塞</b>（撞库反弹角变化，也能把目标球甩偏）· 斜着拖就是高低杆 + 塞一起来':
+      '<b>Up = follow</b> (the cue ball keeps rolling forward after impact) · <b>Down = draw</b> (it comes back) · <b>Left / right = side spin</b> (changes the cushion rebound angle and throws the object ball off line) · dragging diagonally combines both',
+    '<b>红点会记住</b>：下一杆沿用上一次的击球点，方便连续用同一套杆法走位；按 <kbd>R</kbd> 重开本局自动回中':
+      '<b>The dot is sticky</b>: the next shot reuses the same contact point, handy for playing position with one consistent spin; <kbd>R</kbd> restarts the rack and recentres it',
+    '拖到盘边就是<b>这颗球能承受的极限杆法</b>（再往外真杆会滑杆 miscue），所以盘边不是随便画的 —— 盘心到盘边 = 中杆到极限旋转':
+      'The rim of the pad is <b>the most spin this ball can take</b> (a real cue would miscue past it), so the radius is not arbitrary — centre to rim means centre-ball to maximum spin',
     '音效与背景音乐': 'Sound and music',
     '玩法规则（规则设置）': 'Ruleset (Rules settings)',
     '<b>通用</b>：<b>左键在任意处按下</b>即蓄力（光标右侧出现蓄力条，0→1→0 约 4 秒），松手击球；<b>蓄力期间杆向锁定</b> · <kbd>空格</kbd> 同样可蓄力':

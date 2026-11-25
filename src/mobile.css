@@ -221,6 +221,18 @@ html[data-mobile="1"] .confirm-actions button { padding: 13px 0; }
 /* 移动端：手指点击目标要够大，按钮放大回原来的 78px */
 html[data-mobile="1"] #btn-shoot { width: 78px; height: 78px; font-size: 16px; }
 
+/* ---------- 杆法盘（移动端）----------
+   手指比鼠标粗，圆盘放大到 96px 并把红点也放大；位置往左上挪一点避开拇指区，
+   但**必须让开右下角的开球键**（那边是拇指按住蓄力的地方，盘不能盖上去）。 */
+html[data-mobile="1"] #spin-pad {
+  left: calc(12px + var(--safe-l));
+  bottom: calc(96px + var(--safe-b));
+  gap: 4px;
+}
+html[data-mobile="1"] #spin-ring { width: 96px; height: 96px; }
+html[data-mobile="1"] #spin-dot { width: 20px; height: 20px; }
+html[data-mobile="1"] #spin-cap { font-size: 10px; letter-spacing: 0.5px; }
+
 /* ---------- 本地双人（移动端）----------
    两个开球键比单人的更大（一边一个，误按的代价是替对手打一杆）；
    底部大蓄力条要抬到按键上方 —— 它是横向的，和左右两个圆键在同一高度会叠住。
