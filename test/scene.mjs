@@ -51,11 +51,14 @@ const boxes = tableBoxes();
 const visibleBoxes = boxes.filter((b) => b.visible).length;
 const physBoxes = boxes.filter((b) => b.phys).length;
 
-// 每个袋口：边缘平台 + 袋筒 + 喉口口沿 + 传感器占位
-const PER_POCKET_MESH = 4;
-check(table.group.children.length === visibleBoxes + 6 * PER_POCKET_MESH,
-  '台桌网格数正确（可见箱体 + 6×(边缘平台+袋筒+口沿+传感器占位)）',
-  `实际 ${table.group.children.length}，期望 ${visibleBoxes + 6 * PER_POCKET_MESH}`);
+// 每个袋口：边缘平台 + 袋筒 + 传感器占位；口沿只在"喉口比开口留得出 1.4mm"时才有
+// （0.8.0 中袋喉口 62.5 = 开口半宽，没有口沿的空间 —— 与 table.js 的 rimOut 条件同口径）
+import { throatRadiusOf, POCKET_HOLE } from '../src/layout.js';
+const rimPockets = pocketSensors().filter((p) => throatRadiusOf(p) < POCKET_HOLE.half - 0.0014).length;
+const expectedTableMeshes = visibleBoxes + pocketSensors().length * 3 + rimPockets;
+check(table.group.children.length === expectedTableMeshes,
+  '台桌网格数正确（可见箱体 + 每袋(平台+袋筒+传感器)+有空间者含口沿）',
+  `实际 ${table.group.children.length}，期望 ${expectedTableMeshes}（口沿 ${rimPockets} 个）`);
 check(table.sensors.length === 6, '袋口传感器 6 个', `实际 ${table.sensors.length}`);
 check(table.lids.length === 6, '袋口盖板 6 个', `实际 ${table.lids.length}`);
 check(table.lids.every((l) => l.collider.isEnabled() === false),
@@ -185,11 +188,26 @@ console.log('\n[6] 袋口几何：方形边缘平台 + 圆形落球喉口');
   }
   check(insideIsCloth === 0, '开口内侧确实是空的（不是台布）');
 
-  // 开口尺寸：应为 pocketCut + cushionW 见方
-  const { TABLE } = await import('../src/constants.js');
-  const expect = TABLE.pocketCut + TABLE.cushionW;
-  check(Math.abs(hole * 2 - expect) < 1e-9,
-    `袋口开口 ${(expect * 100).toFixed(1)}cm 见方（自台面边缘向内 ${(TABLE.pocketCut * 100).toFixed(1)}cm、向外 ${(TABLE.cushionW * 100).toFixed(1)}cm）`);
+  // 开口尺寸：袋口是**袋心 ∓ POCKET_HOLE.half** 的正方形。0.8.0 起由袋心反推
+  // （袋心已经移到库鼻线外侧，不再等于 pocketCut + cushionW）。
+  // 这里量的性质是"台布缺口的内沿 = 收口环的外沿"：从袋心沿四个方向往外走，
+  // 第一次碰到台布的距离必须正好是开口半宽 —— 差一点就会出现"球从台布上凭空掉下去"
+  // （缺口比环大）或"环压在台布上拱起一条边"（缺口比环小）。
+  const notchDist = [];
+  for (const p of pocketSensors()) {
+    for (const [sx, sz] of dirs) {
+      let first = null;
+      for (let r = 0.001; r <= hole * 1.6; r += 0.0005) {
+        if (insideCloth(p.x + sx * r, p.z + sz * r)) { first = r; break; }
+      }
+      // 朝台外的两个方向（角袋）根本没有台布，跳过
+      if (first === null) continue;
+      if (Math.abs(first - hole) > 0.0006) notchDist.push(`${p.name} ${sx},${sz} → ${(first * 1000).toFixed(1)}mm`);
+    }
+  }
+  check(notchDist.length === 0,
+    `台布缺口内沿 = 开口半宽 ${(hole * 1000).toFixed(1)}mm（收口环外沿严丝合缝）`,
+    notchDist.join(' · '));
   // 0.7.0 喉口半径按袋型分开（角袋 57 / 中袋 60）→ 取最小值与球径比
   const minThroat = Math.min(...pocketSensors().map((p) => throatRadiusOf(p)));
   check(minThroat * 2 > 0.0572 + 0.01,

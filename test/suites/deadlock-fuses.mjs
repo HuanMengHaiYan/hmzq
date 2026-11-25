@@ -24,13 +24,26 @@ function runRattle(maxStrikes, seconds = 20) {
   const s = sensors.find((x) => x.name === '上中袋');
   const ball = spawnBall(world, 99, s.x, s.z);         // 从袋口正上方落下去
   const steps = Math.round(seconds / PHYS.timestep);
-  let strikes = 0, potted = false, pottedAt = null, movingSteps = 0;
+  let strikes = 0, potted = false, pottedAt = null, movingSteps = 0, redrops = 0;
   for (let step = 0; step < steps; step++) {
     world.step();
     const t = ball.body.translation();
     const lv = ball.body.linvel();
     if (Math.hypot(lv.x, lv.y, lv.z) >= PHYS.sleepSpeed) movingSteps++;
-    if (potted || t.y > BALL_R * 0.9) continue;        // 球心还在台面高度
+    if (potted) continue;
+    if (t.y > BALL_R * 0.9) {
+      // 球被抖回后飞出了喉口区：把它放回喉口顶上，模拟真实对局里"后续的动量把球
+      // 一次次重新送进袋口"。0.8.0 起袋心外移、几何变了之后，靠"抖飞的球自己漂回"
+      // 的旧场景不再成立（实测它会滚进对面的中袋、掉进桌腔在托盘上永远滚动，
+      // 抖回次数变成混沌的路径依赖），补球让这个最小场景重新确定性化。
+      if (Math.hypot(t.x - s.x, t.z - s.z) >= throatRadiusOf(s)) {
+        redrops++;
+        ball.body.setTranslation({ x: s.x, y: BALL_R * 2, z: s.z }, true);
+        ball.body.setLinvel({ x: 0, y: 0, z: 0 }, true);
+        ball.body.setAngvel({ x: 0, y: 0, z: 0 }, true);
+      }
+      continue;                                        // 球心还在台面高度
+    }
     // 喉口归属判定（与游戏内 checkPockets 一致）
     if (Math.hypot(t.x - s.x, t.z - s.z) >= throatRadiusOf(s)) continue;
     if (strikes < maxStrikes) {
@@ -43,7 +56,7 @@ function runRattle(maxStrikes, seconds = 20) {
       pottedAt = step * PHYS.timestep;
     }
   }
-  return { strikes, potted, pottedAt, movingSteps, steps };
+  return { strikes, potted, pottedAt, movingSteps, steps, redrops };
 }
 
 /** 场景 B：球停在盖板上，被"轻推"多次后袋口一定会重开 */
@@ -85,10 +98,10 @@ export function testPocketLidFuse() {
 
   const noFuse = runRattle(Number.POSITIVE_INFINITY);            // 对照组 = 修复前的行为
   const fuse = runRattle(RULES.rattleMaxStrikes);                // 实验组 = 现在的行为
-  console.log(`  对照组（无保险丝）：被抖回 ${noFuse.strikes} 次 · 20s 后` +
+  console.log(`  对照组（无保险丝）：被抖回 ${noFuse.strikes} 次（补球 ${noFuse.redrops} 次） · 20s 后` +
     `${noFuse.potted ? `已进袋（第 ${noFuse.pottedAt.toFixed(1)}s）` : '仍未进袋'} · ` +
     `其中 ${(noFuse.movingSteps * PHYS.timestep).toFixed(1)}s 处于"运动中"`);
-  console.log(`  实验组（上限 ${RULES.rattleMaxStrikes} 次）：被抖回 ${fuse.strikes} 次 · ` +
+  console.log(`  实验组（上限 ${RULES.rattleMaxStrikes} 次）：被抖回 ${fuse.strikes} 次（补球 ${fuse.redrops} 次） · ` +
     `${fuse.potted ? `第 ${fuse.pottedAt.toFixed(1)}s 正常进袋` : '仍未进袋'}`);
 
   check(noFuse.strikes > RULES.rattleMaxStrikes && !noFuse.potted,

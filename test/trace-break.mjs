@@ -106,7 +106,7 @@ function run(jitter) {
   return { potted, balls };
 }
 
-console.log(`台面 halfL=${TABLE.halfL} halfW=${TABLE.halfW} 袋口切角=${TABLE.pocketCut} 中袋口=${TABLE.pocketGapMid}`);
+console.log(`台面 halfL=${TABLE.halfL} halfW=${TABLE.halfW} 袋心外移=${TABLE.pocketOut}/${TABLE.pocketOutMid} 开口半宽=${TABLE.pocketHoleHalf}`);
 console.log(`球堆 apex=${(TABLE.halfL / 2 + RACK.shiftX).toFixed(3)}  末排 x=${(TABLE.halfL / 2 + RACK.shiftX + 4 * BALL_R * 2 * 1.004 * Math.cos(Math.PI / 6)).toFixed(3)}`);
 console.log(`扇形角 ${BREAK_SHOCK.fanAngle}°  抖动 ${BREAK_SHOCK.scatter}°\n`);
 

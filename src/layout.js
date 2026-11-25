@@ -79,7 +79,8 @@ export function rackApex(shiftX = RACK.shiftX) {
  */
 export function tableBoxes(opts = {}) {
   const {
-    halfL, halfW, cloth, pocketGapMid: gMid, pocketCut: cut,
+    halfL, halfW, cloth, pocketHoleHalf: holeHalf, pocketOut, pocketOutMid,
+    cushionGapMid: gMid, cushionEndL, cushionEndW,
     cushionH, cushionW, railW, railH,
     outerHalfL, outerHalfW, apronDrop, trayY, legH,
   } = TABLE;
@@ -98,18 +99,35 @@ export function tableBoxes(opts = {}) {
   // 台布一直铺到库边外沿（= 木框内沿），袋口才有"贴台边"的开口空间
   const exL = halfL + cushionW;    // 台布 X 外沿
   const exW = halfW + cushionW;    // 台布 Z 外沿
-  const inL = halfL - cut;         // 袋口向内延伸到的位置（角袋）
-  const inW = halfW - cut;
+  // 袋口缺口的内沿 = 袋心 ∓ pocketHoleHalf。
+  // ⚠️ 必须**从袋心反推**，不能再用"库鼻 - pocketCut"：袋心已经从库鼻外移出去了
+  //   （见 constants.js 的 pocketOut），缺口要跟着袋心走，否则收口环一头压在台布上、
+  //   另一头悬空，球会从台布上凭空掉下去。
+  const inL = halfL + pocketOut - holeHalf;      // 角袋缺口内沿（沿 X）
+  const inW = halfW + pocketOut - holeHalf;      // 角袋缺口内沿（沿 Z）
+  const midIn = halfW + pocketOutMid - holeHalf; // 中袋缺口内沿（沿 Z）
   const surfaceY = -cloth / 2;
 
-  // ---- 1) 台布：中间整条 + 上下各两段，让出 6 个袋口 ----
+  // ---- 1) 台布：中间整条 + 上下各两段（角袋缺口）+ 中袋两侧两块补条 ----
   push({
     id: 'cloth-center', kind: 'cloth', phys: 'clothSurface',
     size: [exL * 2, cloth, inW * 2],
     pos: [0, surfaceY, 0],
   });
-  const stripLenX = inL - gMid;              // 单侧长条台布长度
-  const stripCx = (gMid + inL) / 2;          // 其中心 X
+  // 中袋缺口比角袋缺口更靠外（袋心外移量不同），两个缺口之间那一条台布要单独补上，
+  // 否则 |z| 在 [inW, midIn]、|x| < holeHalf 的这一窄条会是真·空洞，球滚到中袋口
+  // 之前 3 cm 就掉下去。
+  if (midIn > inW + 1e-6) {
+    for (const zs of [1, -1]) {
+      push({
+        id: `cloth-mid-bridge-${zs}`, kind: 'cloth', phys: 'clothSurface',
+        size: [holeHalf * 2, cloth, midIn - inW],
+        pos: [0, surfaceY, zs * (inW + midIn) / 2],
+      });
+    }
+  }
+  const stripLenX = inL - holeHalf;          // 单侧长条台布长度
+  const stripCx = (holeHalf + inL) / 2;      // 其中心 X
   const stripW = exW - inW;                  // 长条宽度（含库边底下那一截）
   const stripCz = (inW + exW) / 2;           // 其中心 Z
   for (const zs of [1, -1]) {
@@ -122,20 +140,22 @@ export function tableBoxes(opts = {}) {
     }
   }
 
-  // ---- 2) 橡胶库边（袋口处断开；长度与台布长条完全对齐）----
+  // ---- 2) 橡胶库边（袋口处断开；断开位置按模型胶边实测）----
+  const cushLenX = cushionEndL - gMid;
+  const cushCx = (gMid + cushionEndL) / 2;
   for (const zs of [1, -1]) {
     for (const xs of [1, -1]) {
       push({
         id: `cushion-long-${xs}-${zs}`, kind: 'cushion', phys: 'cushion', castShadow: true,
-        size: [stripLenX, cushionH, cushionW],
-        pos: [xs * stripCx, cushionH / 2, zs * (halfW + cushionW / 2)],
+        size: [cushLenX, cushionH, cushionW],
+        pos: [xs * cushCx, cushionH / 2, zs * (halfW + cushionW / 2)],
       });
     }
   }
   for (const xs of [1, -1]) {
     push({
       id: `cushion-short-${xs}`, kind: 'cushion', phys: 'cushion', castShadow: true,
-      size: [cushionW, cushionH, inW * 2],
+      size: [cushionW, cushionH, cushionEndW * 2],
       pos: [xs * (halfL + cushionW / 2), cushionH / 2, 0],
     });
   }
@@ -220,11 +240,11 @@ export function tableBoxes(opts = {}) {
   return boxes;
 }
 
-/** 袋口开口规格：台面被切掉的正方形开口（库边断口围出来的那块） */
+/** 袋口开口规格：台面被切掉的正方形开口（= 袋心 ∓ pocketHoleHalf，与收口环外沿重合） */
 export const POCKET_HOLE = {
-  // 开口：向内 pocketCut、向外 cushionW → 边长 = pocketCut + cushionW
-  half: (TABLE.pocketCut + TABLE.cushionW) / 2,
-  inward: TABLE.pocketCut,
+  half: TABLE.pocketHoleHalf,
+  // 自库鼻线往台内让出多少（角袋）= pocketHoleHalf − pocketOut = 52.5 mm
+  inward: TABLE.pocketHoleHalf - TABLE.pocketOut,
 };
 
 /** 6 个袋口传感器规格（不可见，仅用于进袋判定） */

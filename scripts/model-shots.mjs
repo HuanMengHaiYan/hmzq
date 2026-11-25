@@ -151,12 +151,51 @@ await evaluate(`(function(){
 await sleep(500);
 await shot('top');
 
-// 角袋特写：从台内往外俯看，看口沿环有没有盖住切口阶梯
-await pose(0.86, 0.42, 0.28, 1.21, 0, 0.60);
+/** 顶视放大到某个袋口：判据用「洞 / 判定圆 / 台呢边缘」三者的相对位置，全台图看不清 */
+async function topZoom(tx, tz, zoom) {
+  await evaluate(`(function(){
+    __hmzq.rig.setMode('top');                 // setMode 会把 zoom / target 复位，必须先调
+    __hmzq.stage.setLampVisible(false);
+    var cam = __hmzq.stage.orthoCam, ctl = __hmzq.rig.controls;
+    ctl.target.set(${tx}, 0, ${tz});
+    cam.position.x = ${tx}; cam.position.z = ${tz}; cam.position.y = 4.0;
+    cam.zoom = ${zoom}; cam.updateProjectionMatrix();
+    ctl.update();
+    __hmzq.stage.render();
+  })()`);
+  await sleep(320);
+}
+await topZoom(1.255, 0.62, 5.2);
+await shot('pocket-corner-top');
+await topZoom(0, 0.66, 5.2);
+await shot('pocket-mid-top');
+
+const keyD = async (type) => send('Input.dispatchKeyEvent', {
+  type, key: 'd', code: 'KeyD', windowsVirtualKeyCode: 68, nativeVirtualKeyCode: 68,
+});
+// 判定区对照：按一下 D 键开物理线框（Rapier debugRender 画出来的就是 6 个袋口的**收口环**
+// 与传感器），顶视再拍一张 —— 用来核对"台呢上看到的洞"和"进球判定的喉口"是不是同一个圆。
+// 0.8.0 定版后这条判据变成：**模型的自然袋口**（玩家看到的洞）与收口环圆是否重合。
+await keyD('keyDown');
+await keyD('keyUp');
+await sleep(450);                 // 线框在 animate 循环里每帧刷新，等它把顶点写进 geometry
+await topZoom(0, 0, 1);
+await shot('throat-check');
+// 袋口放大 + 线框：每个袋口单独拍一张，是"洞 vs 判定圆"最直接的证据
+await topZoom(1.285, 0.65, 6);
+await shot('pocket-corner-check');
+await topZoom(0, 0.68, 6);
+await shot('pocket-mid-check');
+await keyD('keyDown');            // 再按一次关掉，别让线框糊进后面的特写
+await keyD('keyUp');
+await sleep(250);
+
+// 角袋特写：从台内往外俯看，看模型袋口的接缝与袋兜
+await pose(0.86, 0.42, 0.28, 1.26, 0, 0.64);
 await shot('corner-pocket');
 
 // 中袋特写
-await pose(0.14, 0.36, 0.98, 0.0, 0, 0.635);
+await pose(0.14, 0.36, 0.98, 0.0, 0, 0.66);
 await shot('mid-pocket');
 
 // 低角度：贴着地面往上看，查"框顶悬空方块"与桌腿落地

@@ -81,88 +81,41 @@ export function buildTable(scene, world, RAPIER, opts = {}) {
 
   const linerTop = -0.002;
   const linerH = 0.22;
-  // 0.8.0 有两条路：
+  // 两条路：
   //   参数化桌面（hideVisual=false）：深色平台 + 袋筒 + 喉口口沿，把方形开口收成圆洞；
-  //   真实模型（hideVisual=true）：模型袋口由 fix-table-glb.py 挖成**近圆胶囊**
-  //     （A 端 = 物理袋心、宽 125mm、B 端裁到模型库边外沿 1333/706），
-  //     台呢上是圆润缺口、木框一根头发不动。这里只补两样：深色袋兜内壁 + 一圈护圈。
+  //   真实模型（hideVisual=true）：**不挖洞**，模型自带袋口就是玩家看到的洞
+  //     （0.8.0 定版：以前按判定圆在台呢上挖一个圆洞，结果绿台呢上多出一个黑圆盘，
+  //      模型自己的袋口反而在旁边 —— 用户一眼就看出来"这个洞不是模型上的"）。
+  //     这里只补一个深色袋兜内壁，挡住球落下去时从洞口看到的桌腔与落球盘。
   //
-  // 为什么必须补：
-  //   ① 挖穿后从洞口看到的不是"黑洞"，是模型内部的背面和浅色结构（库边背面、木框内侧），
-  //      不遮就穿帮。参数化桌面那块深色平台 + 袋筒解决的是同一个问题。
-  //   ② 挖洞是把三角形删到 6 mm 精度，切口必然留台阶：台呢上是浅绿锯齿、库边断口上是
-  //      一排竖齿。护圈做成 26 mm 高的挤出环 —— 水平面盖台呢、侧壁盖库边断口。
-  //   ③ 真实球桌的袋口本来就有护圈和袋兜，所以这一圈是"补得像"，不是打补丁。
+  // ⚠️ 洞口形状的历史（别走回头路，0.8.0-test 返工四次）：
+  //   ①「袋心 + 半径 60/70、往下放到 150」把木框下半部掏空 → "像挖了个大坑"；
+  //   ②「125 mm 宽、向框内沿延伸的胶囊」→ 台呢上被咬掉的月牙重心偏台内约 40 mm；
+  //   ③「圆心 = 判定圆、半径 = 喉口」→ 洞是正圆了，但它落在台呢中间而不是模型袋口上
+  //     （因为判定圆本身就比模型袋口靠内 3~5 cm）；
+  //   ④ 现在：不挖，把**判定圆挪到模型袋口上**（见 constants.js 的 pocketOut）。
   if (hideVisual) {
     const wellMat = darkMat.clone();
     wellMat.side = THREE.DoubleSide;
     wellMat.color = new THREE.Color(0x15191d);
     wellMat.roughness = 0.95;
-    const WELL_R = 0.128, WELL_H = 0.32;
-
-    // 挖洞用的胶囊端点，必须与 scripts/fix-table-glb.py 的 capsules() 一致：
-    // A 端 = 物理袋心，B 端外移一个半径让圆头贴住框内沿。
-    const OUT_L = 1.333, OUT_W = 0.706;     // 模型库边外沿（glb-measure 实测）
-    const CAP_R = 0.0625;                   // = (pocketCut + cushionW) / 2
-    const capOf = (p) => {
-      const sx = Math.sign(p.x) || 1;
-      const sz = Math.sign(p.z) || 1;
-      const o = (TABLE.pocketCut - TABLE.cushionW) / 2;
-      const pz = sz * (TABLE.halfW - o);
-      // ⚠️ 中袋 A 端 x 必须是 0，不能走 sx * (halfL - o)：中袋 p.x = 0，
-      //    Math.sign(0) || 1 会给出 1，椭圆长轴被拉成 1.4 m，在台呢上横跨整条长边
-      //    （表现就是从角袋连到中袋的一条黑线）。
-      if (p.type === 'middle') return [0, pz, 0, sz * (OUT_W - CAP_R)];
-      const px = sx * (TABLE.halfL - o);
-      return [px, pz, sx * (OUT_L - CAP_R * Math.SQRT1_2), sz * (OUT_W - CAP_R * Math.SQRT1_2)];
-    };
-    // ⚠️ 不要用 Shape 画胶囊环：L（两端距离）小于半径时两个半圆会重叠、路径自交，
-    // ShapeGeometry 三角化会甩出贯穿台面的细长碎片。L < R 时胶囊本来就近似椭圆
-    //（长半轴 = R + L/2，短半轴 = R），所以直接画椭圆环。
-    const ellipseRing = (rx, ry, width, shrink) => {
-      const outer = new THREE.Shape();
-      outer.absellipse(0, 0, rx + width, ry + width, 0, Math.PI * 2, false, 0);
-      const holePath = new THREE.Path();
-      holePath.absellipse(0, 0, rx - shrink, ry - shrink, 0, Math.PI * 2, false, 0);
-      outer.holes.push(holePath);
-      return outer;
-    };
-    // 护圈要看到内壁，所以 DoubleSide；颜色压到近黑，不然聚光灯下是一圈灰环。
-    const rimBand = new THREE.MeshStandardMaterial({
-      color: 0x0c0f12, roughness: 0.96, side: THREE.DoubleSide,
-    });
+    const WELL_H = 0.32;
 
     for (const p of pocketSensors()) {
+      const R = throatRadiusOf(p);
+
+      // 袋兜内壁：正圆筒，口径贴着喉口（模型袋口是漏斗形，筒比它略大就永远看不到筒外的结构）
       const tube = new THREE.Mesh(
-        new THREE.CylinderGeometry(WELL_R, WELL_R * 0.94, WELL_H, 24, 1, true),
+        new THREE.CylinderGeometry(R + 0.004, R, WELL_H, 32, 1, true),
         wellMat,
       );
-      tube.position.set(p.x, -WELL_H / 2 - 0.003, p.z);
+      tube.position.set(p.x, -WELL_H / 2 - 0.004, p.z);
       tube.name = `pocket-well-${p.index}`;
       group.add(tube);
 
-      // 口沿带：椭圆环，中心放在胶囊中点，长轴沿袋口方向
-      const [ax, az, bx, bz] = capOf(p);
-      const L = Math.hypot(bx - ax, bz - az);
-      const th = Math.atan2(bz - az, bx - ax);
-      const rx = CAP_R + L / 2, ry = CAP_R;
-      // 挤出成 26 mm 高的护圈：水平环盖台呢切口的台阶，侧壁盖住**库边断口**的竖直台阶
-      // （库边 39 mm 高，只盖水平面的话低角度看断口是一排锯齿）。
-      const geo = new THREE.ExtrudeGeometry(ellipseRing(rx, ry, 0.009, 0.005), {
-        depth: 0.026, bevelEnabled: false, curveSegments: 96, steps: 1,
-      });
-      // ⚠️ 必须 +π/2：-π/2 会把挤出方向翻到台面**上方**，护圈变成一个凸起的黑圆柱；
-      // +π/2 才是往下 26 mm（Shape 的 y 映射到 +z，椭圆对称所以不影响形状）。
-      geo.rotateX(Math.PI / 2);
-      geo.rotateY(-th);
-      geo.translate((ax + bx) / 2, 0.0004, (az + bz) / 2);
-      const band = new THREE.Mesh(geo, rimBand);
-      band.name = `pocket-rim-${p.index}`;
-      group.add(band);
-
-      const bottom = new THREE.Mesh(new THREE.CircleGeometry(WELL_R * 0.94, 24), wellMat);
+      const bottom = new THREE.Mesh(new THREE.CircleGeometry(R, 32), wellMat);
       bottom.rotation.x = -Math.PI / 2;
-      bottom.position.set(p.x, -WELL_H - 0.003, p.z);
+      bottom.position.set(p.x, -WELL_H - 0.004, p.z);
       bottom.name = `pocket-bottom-${p.index}`;
       group.add(bottom);
     }

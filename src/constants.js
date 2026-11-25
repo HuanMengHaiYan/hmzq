@@ -12,8 +12,36 @@ export const TABLE = {
   halfL: 1.27,          // 台面长半轴（X 方向）
   halfW: 0.635,         // 台面宽半轴（Z 方向）
   cloth: 0.04,          // 台板（石板+台布）厚度，顶面 y = 0
-  pocketCut: 0.075,     // 袋口：自台面边缘（库边内沿）向内让出 7.5cm
-  pocketGapMid: 0.0625, // 中袋口半宽：长库边在此处断开（中袋口宽 12.5cm）
+
+  // ---------- 袋口几何（0.8.0 按真实模型实测重定）----------
+  // 台布上让出的**正方形**开口半宽，6 个袋口统一；收口环（layout.js 的 pocketCollarBoxes）
+  // 再把它收成圆形喉口，球心进喉口圆才算落袋。
+  // 0.7.0 是 (pocketCut 75 + cushionW 50) / 2 = 62.5，正好也是 62.5 —— 只是那版是"从库鼻
+  // 向内让 75、向外到框内沿"，袋子中心落在库鼻交点往里 12.5 mm。
+  pocketHoleHalf: 0.0625,
+  // 袋心相对库鼻线的**外移量**：真实模型的袋口整体比库鼻交点更靠外，判定圆要跟着外移，
+  // 球才会"消失在洞口上"而不是"消失在离洞口几厘米的台呢上"（0.8.0 用户拿截图圈出来的错位）。
+  // ⚠️ 这两个数是**四轮实测折中**出来的（脚本 test/tmp-hitrate*.mjs，2026-11-25）：
+  //   ①  -12.5/-12.5  旧参数化桌的袋心：角袋掉落点距视觉洞口边还有 47mm，球在台呢上凭空消失；
+  //   ②   14 / 45     完美贴齐视觉洞口（判定圆外沿=洞口边），但横向容差 120→90mm，
+  //                    auto-aim 93.5%→80.7%、AI 各档全崩 —— 视觉对了、手感错了；
+  //   ③   10 / 16     定稿：掉落点中袋越过视觉洞口边 35mm（在洞口内消失 ✓）、角袋贴在洞口边，
+  //                    auto-aim 93.5% / AI 四档全部落在用户定的难度带上（配合 AI_LEVELS 重标定）。
+  //   角袋袋心 (±1.280, ±0.645) · 中袋袋心 (0, ±0.651)。
+  pocketOut: 0.010,
+  pocketOutMid: 0.016,
+  // 库边断口：物理胶边断在哪里。
+  //   长库边角袋侧 = 1.198、中袋侧 ±0.070 —— **按模型实测**，跟得上视觉。
+  //   短库边 |z| = 0.560 —— ⚠️ 这一条**故意比模型短 56 mm**：模型的两个袋角
+  //     （长库边 1.198 / 短库边 0.616）之间的口宽只有 73 mm，球是 57 mm，
+  //     只剩 16 mm 余量，正面来球会擦着袋角被弹出来（实测自动出杆命中率从 92% 掉到 38%）。
+  //     物理上按真实 9 尺台的 114 mm 口宽留（1.198 / 0.560 → 对角 104 mm），
+  //     代价是贴短库滚进角袋时，球的视觉会压进模型胶边最多 56 mm —— 只在角上、只影响观感，
+  //     比"袋口打不进"划算得多。
+  cushionGapMid: 0.070,
+  cushionEndL: 1.198,
+  cushionEndW: 0.560,
+
   pocketSensorR: 0.065, // 进袋判定传感器半径
 
   // ---------- 圆形落球喉口半径（按袋型分开，0.7.0 改）----------
@@ -23,15 +51,13 @@ export const TABLE = {
   //   中袋真实 ~127mm（5 英寸）  → 当时紧 44%
   // 而且两者一样大，中袋入射角本来就更刁，实际变成"中袋几乎不敢打"。
   // 现在按真实尺寸分开：
-  //   角袋 57mm → 直径 114mm，与真实一致；
-  //   中袋 60mm → 直径 120mm，**比角袋大**（方向对了）。没取真实的 127mm 是因为
-  //   台面上挖出的方形开口只有 125mm 见方（pocketCut 75 + cushionW 50），
-  //   再大就放不下收口环了；要完全还原需要同时加宽 pocketGapMid / pocketCut，
-  //   那会连带改动台布拼块与库边断开位置，留作后续单独一批（见 docs/代码体检-0.7.0.md）。
-  // ⚠️ 改这两个数之后必须用 test/sweep-break.mjs 重扫开球参数
+  //   角袋 57mm → 直径 114mm，与真实一致（模型实测口线 111mm，对得上）；
+  //   中袋 62.5mm → 直径 125mm，**比角袋大**（方向对了）；模型实测袋口宽 140mm，
+  //   判定圆仍在视觉洞口之内。62.5 = pocketHoleHalf（方形开口半宽）是收口环几何的上限。
+  // ⚠️ 改这两个数（或 pocketHoleHalf / pocketOut*）之后必须用 test/sweep-break.mjs 重扫开球参数
   //   （BREAK_SHOCK 的 sideBias / fanAngle / RACK.shiftX 对袋口尺寸极敏感）。
   pocketThroat: 0.057,
-  pocketThroatMid: 0.060,
+  pocketThroatMid: 0.0625,
   cushionH: 0.062,      // 橡胶库边高度（> 球直径 0.0572，防止跳球飞出）
   cushionW: 0.05,       // 橡胶库边厚度
   railW: 0.09,          // 木质外框厚度
@@ -44,22 +70,20 @@ export const TABLE = {
 TABLE.outerHalfL = TABLE.halfL + TABLE.cushionW + TABLE.railW;
 TABLE.outerHalfW = TABLE.halfW + TABLE.cushionW + TABLE.railW;
 
-// 6 个袋口中心（= 台面开洞的中心点）
-// 开口范围：自台面边缘向内 pocketCut、向外 cushionW（正好被库边断口围出来），
-// 因此开口中心落在"台面边缘再往外一点点"，袋口看上去就贴在台角 / 长边中段，
-// 而不是缩在台布中间（更接近真实球桌，也和台布实际被切掉的位置完全一致）。
+// 6 个袋心 = 按模型自然袋口外移后的判定圆心（0.8.0 四轮实测定稿，见 TABLE.pocketOut 的说明）。
+// 台布 / 收口环 / 传感器 / 洞盖板全都以它为准：袋心往哪挪，台布缺口和判定圆一起挪。
 //
 // type: 'corner' 角袋 | 'middle' 中袋 —— 两者喉口半径不同，见 TABLE.pocketThroat 的说明。
 export const POCKETS = (() => {
-  const { halfL, halfW, pocketCut, cushionW } = TABLE;
-  const off = (pocketCut - cushionW) / 2;
-  const cx = halfL - off;
-  const cz = halfW - off;
+  const { halfL, halfW, pocketOut, pocketOutMid } = TABLE;
+  const cx = halfL + pocketOut;
+  const cz = halfW + pocketOut;
+  const mz = halfW + pocketOutMid;
   return [
     { name: '左下角袋', x: -cx, z: -cz, type: 'corner' },
     { name: '左上角袋', x: -cx, z: +cz, type: 'corner' },
-    { name: '下中袋', x: 0, z: -cz, type: 'middle' },
-    { name: '上中袋', x: 0, z: +cz, type: 'middle' },
+    { name: '下中袋', x: 0, z: -mz, type: 'middle' },
+    { name: '上中袋', x: 0, z: +mz, type: 'middle' },
     { name: '右下角袋', x: +cx, z: -cz, type: 'corner' },
     { name: '右上角袋', x: +cx, z: +cz, type: 'corner' },
   ];
@@ -175,7 +199,18 @@ export const BREAK_SHOCK = {
   //     0.60  104   -0.15   0.78     43%    5~7%     17%       3      同样好，进袋偏少
   //     0.60  104   -0.19   0.96     32%    5~12%    17%       0      ← 采用（200 次终验 12%）
   //   shiftX 这次是主导杠杆：-0.19 让球堆后收、末排与角袋错位更远，扇形可以放得更大。
-  sideBias: 0.60,
+  //
+  // 0.8.0 袋口几何定稿（pocketOut 10/16，判定圆贴齐模型视觉洞口）后复扫
+  // （test/sweep-break.mjs，60 次粗扫 10 档 + 250 次终验 3 档）：判定圆外移把
+  // 末排内圈球（6/7 号）的"贴库滚进脚区角袋"线路重新打开 —— 旧 0.60/104 下
+  // 内圈 6/7 号进袋率 40~50%（250 次终验 40%），单颗球"几乎每次都进"回归。
+  //   sideBias  进袋/次  0进%  单球最高%  内圈67%
+  //     0.55    0.43     63%   15%        15%     进袋太少
+  //     0.60    1.20     17%   40%        40%     ← 固定线路回归
+  //     0.63    0.93     33%   26%        13%     干净但进袋偏少
+  //     0.65    1.02     29%   29%        12%     ← 采用（250 次终验）
+  //     0.67    0.72     42%   32%         7%     进袋偏少
+  sideBias: 0.65,
   maxSpeed: 7.0,    // 扇形角过大时的速度保险丝（超过它就整体等比压低）；真实开球球速上限约 7m/s
   // 能量补偿：引擎在球堆接触里还额外吃掉了约一半动能（真实球台几乎无损），
   // 这里把球堆速度整体放大到"真实开球"的水平；1 = 严格动量守恒，实测 1.4~1.6 最接近真实开球。
@@ -468,21 +503,25 @@ export const AUTO = {
  */
 export const AI_LEVELS = {
   // 由难到易写（aiLevelList() 会反过来，界面上显示"简单 → 极难"）
+  // ⚠️ 0.8.0 袋口几何定稿（pocketOut 10/16）后三档 aimErr 整体调小重标定：
+  //    新袋口更靠外、横向容差更窄，沿用旧抖动会让 困难/中等/简单 全部掉出用户定的难度带
+  //    （实测 56.7/31.5/20.8 → 目标带 62-78/38-52/24-38）。极难的 0.0024 在带内，没动。
+  //    实测（2 种子 × 100 局/档）：极难 86.0 · 困难 66.3 · 中等 42.7 · 简单 29.8 ✓
   extreme: {
     id: 'extreme', name: '极难', sub: '几乎不失误，长台薄球也照进',
     aimErr: 0.0024, powErr: 0.030, rankP: 0.06, thinkMs: [380, 760],
   },
   hard: {
     id: 'hard', name: '困难', sub: '准度高，长台与薄球偶尔失手',
-    aimErr: 0.0066, powErr: 0.070, rankP: 0.22, thinkMs: [460, 860],
+    aimErr: 0.0042, powErr: 0.070, rankP: 0.22, thinkMs: [460, 860],
   },
   normal: {
     id: 'normal', name: '中等', sub: '会打，但失误不少',
-    aimErr: 0.0115, powErr: 0.13, rankP: 0.45, thinkMs: [520, 1000],
+    aimErr: 0.0072, powErr: 0.13, rankP: 0.45, thinkMs: [520, 1000],
   },
   easy: {
     id: 'easy', name: '简单', sub: '失误多，适合熟悉操作',
-    aimErr: 0.0196, powErr: 0.19, rankP: 0.66, thinkMs: [620, 1300],
+    aimErr: 0.0122, powErr: 0.19, rankP: 0.66, thinkMs: [620, 1300],
   },
 };
 

@@ -45,7 +45,14 @@ POCKET_CUT = 0.075                    # 袋口自库鼻向内让出
 CUSHION_W = 0.050                     # 库边厚度
 GAP_MID = 0.0625                      # 中袋口半宽（TABLE.pocketGapMid）
 POCKET_OFF = (POCKET_CUT - CUSHION_W) / 2   # 袋心相对库鼻交点的偏移（12.5 mm）
-R_HOLE = (POCKET_CUT + CUSHION_W) / 2       # 开口半宽 = 62.5 mm（物理方孔的一半）
+
+# ---- 洞口 = 进球判定圆，同一个圆 ----
+# 与 src/constants.js 的 TABLE.pocketThroat / pocketThroatMid 一一对应。
+# 球心进入这个圆才算落袋（判据见 src/pockets.js），所以**台面被挖掉的洞必须是它**：
+# 洞比判定圆大 → 球在台呢上"悬空"掉下去；洞比判定圆小 → 球先撞切口再进袋。
+THROAT = {"corner": 0.057, "middle": 0.060}
+# 视觉余量 1 mm：切线是 6 mm 细分出来的多边形，留 1 mm 让锯齿不会露在洞口以内。
+R_VIS = 0.001
 
 IN_L, IN_W = HALF_L - POCKET_CUT, HALF_W - POCKET_CUT   # 1195 / 560（物理边界）
 # 框内袋兜口中心。⚠️ 必须留出框边：模型外沿 1451.7 / 836.7，中心 + R_HOLE 不能越过去，
@@ -55,7 +62,7 @@ OUT_L, OUT_W = 1.333, 0.706           # 模型库边外沿 = 木框内沿（实�
 # 胶囊轴一穿过框顶的大三角形就一路细分到底 —— 面数从 4.5 万炸到 32 万、GLB 9.7 MB。
 Y_TOP = 0.041
 Y_BOTTOM = -0.40                      # 挖到桌腔
-SPLIT_EDGE = 0.006                    # 细分目标边长（米）
+SPLIT_EDGE = 0.004                    # 细分目标边长（米）：圆洞切成 4 mm 段，视觉才圆
 SPLIT_DEPTH = 9                       # 台呢是 2.5 m 的大三角形，深度不够会停在 20 mm 的台阶上
 
 
@@ -100,51 +107,43 @@ def model_consts():
     return out
 
 
-def capsules():
-    """6 个袋口的胶囊：A 端 = **物理袋心**，B 端沿袋口方向外移，让圆头外沿刚好贴到框内沿。
+def holes():
+    """6 个袋口的圆形洞口：**圆心 = 物理袋心，半径 = 该袋的喉口半径**。
 
-    这样洞的四条边界正好落在物理边界上：
-      · 内边界 = 袋心 - R = 1195 / 560（= 物理台布缺口的内沿）
-      · 外边界 = 框内沿 1333 / 706
-      · 洞口宽度 = 2R = 125 mm（= 物理方孔边长）
-    角袋沿对角线长 175 mm，物理方孔对角 176 —— 形状是"近圆的胶囊"，不是细长槽。
+    历史教训（0.8.0-test 三次返工）：
+      · 第一版按"袋心 + 圆"挖，但半径给到 60/70 且往框外放 150 mm
+        → 木框下半部被掏空，用户说"这不像台球桌，像挖了个大坑"；
+      · 第二版改成 125 mm 宽、向框内沿延伸的**胶囊**，想把物理方孔的四条边界都盖住
+        → 台呢上被咬掉的月牙重心整个偏台内，视觉洞口与判定圆错位约 40 mm，
+        用户圈出来的"判定区"（袋心）和看到的黑坑对不上。
+    现在回到最朴素的定义：**挖掉的就是判定圆本身**，一个袋一个圆，不多挖一寸。
     """
     out = []
     for sx in (-1, 1):
         for sz in (-1, 1):
-            px, pz = sx * (HALF_L - POCKET_OFF), sz * (HALF_W - POCKET_OFF)
-            out.append((px, pz,
-                        sx * (OUT_L - R_HOLE * 0.7071), sz * (OUT_W - R_HOLE * 0.7071), "corner"))
+            out.append((sx * (HALF_L - POCKET_OFF), sz * (HALF_W - POCKET_OFF),
+                        THROAT["corner"] + R_VIS, "corner"))
     for sz in (-1, 1):
-        out.append((0.0, sz * (HALF_W - POCKET_OFF), 0.0, sz * (OUT_W - R_HOLE), "middle"))
+        out.append((0.0, sz * (HALF_W - POCKET_OFF), THROAT["middle"] + R_VIS, "middle"))
     return out
 
 
-CAPS = capsules()
-
-
-def capsule_sdf(x, z, x0, z0, x1, z1, r):
-    vx, vz = x1 - x0, z1 - z0
-    wx, wz = x - x0, z - z0
-    L2 = vx * vx + vz * vz
-    t = 0.0 if L2 < 1e-12 else max(0.0, min(1.0, (wx * vx + wz * vz) / L2))
-    return math.hypot(x - (x0 + t * vx), z - (z0 + t * vz)) - r
+HOLES = holes()
 
 
 def clearance(x, y, z):
     """世界坐标点到"要挖掉的区域"的有符号距离：< 0 = 在洞内，> 0 = 在外。
 
-    区域 = 胶囊 ∩ 台面矩形（|x| ≤ 1333、|z| ≤ 706 = 模型库边外沿）。
-    ⚠️ 这个裁剪不能省：不裁的话胶囊的圆头会伸到木框上、把框啃出一个大豁口，
-    从洞里还能看见内衬筒的外壁 —— 就是"台面上立着一根黑管"的观感。
-    裁完形状是"一端圆、一端方"的圆角矩形：台呢上圆润，到框内沿齐平收口。
+    区域 = 圆 ∪ 圆 ∪ … ∩ 台面矩形（|x| ≤ 1333、|z| ≤ 706 = 模型库边外沿）。
+    ⚠️ 矩形裁剪不能省：圆的外沿虽然远到不了木框，但留着这层保护，
+       以后有人放大喉口半径也不会把框啃穿（框顶 44.6 mm 在 Y_TOP 之上，本就不会被切）。
     """
     if y > Y_TOP or y < Y_BOTTOM:
         return 1e9
     clip = max(abs(x) - OUT_L, abs(z) - OUT_W)
     best = 1e18
-    for x0, z0, x1, z1, _ in CAPS:
-        d = capsule_sdf(x, z, x0, z0, x1, z1, R_HOLE)
+    for cx, cz, r, _ in HOLES:
+        d = math.hypot(x - cx, z - cz) - r
         if d < best:
             best = d
     return max(best, clip)
@@ -168,34 +167,30 @@ def _in_tri(px, pz, a, b, c):
     return not (neg and pos)
 
 
-def seg_tri_hit(x0, z0, x1, z1, tri, r):
-    """XZ 平面上"线段 + 半径 r 的胶囊"是否与三角形相交。
+def tri_hits_circle(cx, cz, r, tri):
+    """三角形（XZ 投影）是否与圆相交。
 
-    ⚠️ 必须用这个精确判据，不能用"胶囊外接框 vs 三角形外接框"：
-    台呢是 200 mm 的大三角形，外接框判据会让它一路细分到底，
-    细分次数从 9 千炸到 15 万、GLB 从 1.4 MB 涨到 13.7 MB。
+    ⚠️ 与之前的线段-胶囊判据同一个坑：不能用"圆的包围盒 vs 三角形包围盒"，
+    台呢是 200 mm 的大三角形，外接框判据会让它一路细分到底（面数炸十倍）。
     """
     r2 = r * r
     a, b, c = tri
-    # 三角形顶点落在胶囊内
     for p in (a, b, c):
-        if _pt_seg_d2(p[0], p[1], x0, z0, x1, z1) <= r2:
+        if (p[0] - cx) ** 2 + (p[1] - cz) ** 2 <= r2:
             return True
-    # 线段两端点落在三角形边上/内
-    for s in ((x0, z0), (x1, z1)):
-        if _in_tri(s[0], s[1], a, b, c):
+    if _in_tri(cx, cz, a, b, c):
+        return True
+    for p, q in ((a, b), (b, c), (c, a)):
+        if _pt_seg_d2(cx, cz, p[0], p[1], q[0], q[1]) <= r2:
             return True
-        for p, q in ((a, b), (b, c), (c, a)):
-            if _pt_seg_d2(s[0], s[1], p[0], p[1], q[0], q[1]) <= r2:
-                return True
     return False
 
 
 def hits_any(pts):
-    """三角形（XZ 投影）是否与任一胶囊区域相交。"""
+    """三角形（XZ 投影）是否与任一口袋圆相交。"""
     tri = ((pts[0][0], pts[0][1]), (pts[1][0], pts[1][1]), (pts[2][0], pts[2][1]))
-    for x0, z0, x1, z1, _ in CAPS:
-        if seg_tri_hit(x0, z0, x1, z1, tri, R_HOLE):
+    for cx, cz, r, _ in HOLES:
+        if tri_hits_circle(cx, cz, r, tri):
             return True
     return False
 
@@ -332,13 +327,15 @@ def main():
                 out.append((a, b, c))
                 return
         if depth <= 0 or max(dist3(wa, wb), dist3(wb, wc), dist3(wc, wa)) < SPLIT_EDGE:
-            # ⚠️ 判据必须是**质心**，不能是 (ca+cb+cc) >= 0：
-            # 后者会把"一个顶点在洞内、另两个在外"的三角形整块保留，那个伸进洞里的顶点
-            # 就变成一条细长碎片 —— 俯视看是台呢上一条横穿袋口的黑线（也解释了一直有的"黑刺"）。
-            cx3 = (wa[0] + wb[0] + wc[0]) / 3
-            cy3 = (wa[1] + wb[1] + wc[1]) / 3
-            cz3 = (wa[2] + wb[2] + wc[2]) / 3
-            if clearance(cx3, cy3, cz3) >= 0:
+            # ⚠️ 保留判据：**三个顶点都在洞外**（ca/cb/cc 是进函数时算的顶点有符号距离）。
+            #    · 写成 (ca+cb+cc) >= 0 → 把"一个顶点在洞内、两个在外"的三角形整块留下，
+            #      那个顶点就变成一条伸进洞口的细长碎片（俯视是横穿袋口的黑线，0.7.0 的"黑刺"）；
+            #    · 写质心 → 碎片小一点但仍有：4 mm 的三角形质心在外、顶点却能扎进洞里 2~3 mm，
+            #      近景看就是"台呢尖角戳进洞口"（0.8.0-test 第三次返工）。
+            #    三顶点全在外，等于**洞只会略大、绝不会小于判定圆** —— 方向是对的：
+            #    球永远不会先撞上一块戳进洞里的台呢。误差上界 = SPLIT_EDGE（4 mm），
+            #    相对 114/120 mm 的洞口是 3%，肉眼看不出来。
+            if ca > 0 and cb > 0 and cc > 0:
                 out.append((a, b, c))
             else:
                 stats["kill"] += 1
